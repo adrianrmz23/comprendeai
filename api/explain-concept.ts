@@ -1,5 +1,5 @@
-import { createStructuredResponse } from './_openai'
-import { hashObject, readAiCache, writeAiCache } from './_supabase'
+import { createStructuredResponse } from './_openai.js'
+import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
 const PROMPT_VERSION = 'concept-explanation-v1.4'
 

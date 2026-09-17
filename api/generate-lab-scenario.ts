@@ -1,5 +1,5 @@
-import { createRoutedLabJson } from './_modelRouter'
-import { hashObject, readAiCache, writeAiCache } from './_supabase'
+import { createRoutedLabJson } from './_modelRouter.js'
+import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
 const PROMPT_VERSION = 'lab-narrative-v1.0'
 

@@ -1,4 +1,4 @@
-import type { GenericLabPlan, GenericLabTemplate } from './types'
+import type { GenericLabPlan, GenericLabTemplate } from './types.js'
 
 type Token = { type: 'number' | 'id' | 'op' | 'paren' | 'comma'; value: string }
 

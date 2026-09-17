@@ -1,7 +1,7 @@
-import { createRoutedLabJson } from './_modelRouter'
-import { hashObject, readAiCache, writeAiCache } from './_supabase'
-import { sanitizeGenericLabPlan, validateGenericLabPlan } from '../src/labs/genericEngine'
-import type { GenericLabPlan, GenericLabTemplate, LabRecommendation } from '../src/labs/types'
+import { createRoutedLabJson } from './_modelRouter.js'
+import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
+import { sanitizeGenericLabPlan, validateGenericLabPlan } from '../src/labs/genericEngine.js'
+import type { GenericLabPlan, GenericLabTemplate, LabRecommendation } from '../src/labs/types.js'
 
 const PROMPT_VERSION = 'generic-lab-composer-v2.0'
 

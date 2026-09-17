@@ -927,6 +927,11 @@ function MaterialsView({
                     </button>
                   ))}
                 </div>
+                {semantic.engine === 'local' && semantic.warnings?.[0] && (
+                  <div className="semantic-inline-warning" title={semantic.warnings[0]}>
+                    <CircleHelp size={14} /> <span>{semantic.warnings[0]}</span>
+                  </div>
+                )}
                 <div className="material-card-foot semantic-foot">
                   <span>{semantic.documentSummary}</span>
                   <div>

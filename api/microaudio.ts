@@ -1,4 +1,4 @@
-import { AUDIO_BUCKET, createAudioSignedUrl, getStoredAudio, hashObject, sha256, storeAudioAsset } from './_supabase'
+import { AUDIO_BUCKET, createAudioSignedUrl, getStoredAudio, hashObject, sha256, storeAudioAsset } from './_supabase.js'
 
 const DEFAULT_MODEL = 'eleven_multilingual_v2'
 const DEFAULT_FORMAT = 'mp3_44100_128'

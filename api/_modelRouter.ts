@@ -1,4 +1,4 @@
-import { createStructuredResponse } from './_openai'
+import { createStructuredResponse } from './_openai.js'
 
 type ProviderName = 'openai' | 'deepseek' | 'cheapinference'
 

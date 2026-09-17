@@ -176,8 +176,16 @@ export async function analyzeMaterialSemantically(material: StudyMaterial, force
     const data = await response.json()
     if (!data?.analysis?.concepts?.length) throw new Error('Semantic API returned no concepts')
     return normalizeSemanticAnalysis(data.analysis as SemanticDocumentAnalysis)
-  } catch {
-    return fallback
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error desconocido del motor semántico remoto'
+    console.warn('[Comprende semantic] Se usó mapa local porque falló /api/analyze-material:', message)
+    return {
+      ...fallback,
+      warnings: [
+        `Motor remoto no disponible: ${message}`,
+        ...fallback.warnings,
+      ],
+    }
   }
 }
 

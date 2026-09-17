@@ -1,6 +1,6 @@
-import { createStructuredResponse } from './_openai'
-import { cosine, embedWithHuggingFace } from './_huggingface'
-import { hashObject, readAiCache, writeAiCache } from './_supabase'
+import { createStructuredResponse } from './_openai.js'
+import { cosine, embedWithHuggingFace } from './_huggingface.js'
+import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
 const PROMPT_VERSION = 'semantic-map-v2.0-universal-labs'
 
