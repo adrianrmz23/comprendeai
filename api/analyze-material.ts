@@ -2,7 +2,7 @@ import { createStructuredResponse } from './_openai.js'
 import { cosine, embedWithHuggingFace } from './_huggingface.js'
 import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
-const PROMPT_VERSION = 'semantic-map-v2.0-universal-labs'
+const PROMPT_VERSION = 'semantic-map-v2.0.3-bounded-json'
 
 type Chunk = { id: string; page: number | null; text: string }
 type LocalCandidate = { label: string; score: number; snippet: string }
@@ -160,7 +160,7 @@ Construye un mapa de conocimiento de dos niveles para APRENDER, no un resumen ni
 REGLAS DE COBERTURA
 - Usa exclusivamente la evidencia incluida. No inventes conceptos solo porque sean comunes en la materia.
 - Haz una auditoría explícita de cobertura: presta especial atención a títulos/secciones, objetivos, fórmulas definidas, glosarios, tablas de componentes, algoritmos nombrados y ejercicios. Si una idea tiene un apartado propio o se define como requisito de otra, no la omitas solo por aparecer pocas veces.
-- Devuelve entre 14 y 24 conceptos cuando la evidencia lo sostenga. Debe haber aproximadamente 10–16 conceptos tier="essential" y el resto tier="deep".
+- Devuelve entre 12 y 20 conceptos cuando la evidencia lo sostenga. Debe haber aproximadamente 9–14 conceptos tier="essential" y el resto tier="deep". Mantén las descripciones muy concisas: 1–2 frases por concepto.
 - "essential" = necesario para recorrer el tema sin huecos conceptuales. "deep" = detalle interno, algoritmo, componente o extensión que conviene descubrir al abrir un concepto mayor.
 - Prefiere términos específicos (p. ej. "probabilidad condicional", "independencia condicional") frente a palabras genéricas (p. ej. "probabilidad") cuando la evidencia lo sostenga.
 - Fusiona variantes y duplicados del mismo concepto. No unas conceptos distintos solo porque comparten una palabra.
@@ -177,7 +177,7 @@ CLASIFICACIÓN PEDAGÓGICA
 - No modeles Naive Bayes como parte de Redes Bayesianas: si ambos aparecen, normalmente son conceptos relacionados que comparten Bayes e independencia condicional, salvo que la evidencia del documento establezca explícitamente una jerarquía distinta.
 - studyQuestion debe ser una pregunta breve que compruebe comprensión conceptual, no memoria literal.
 - pages solo puede contener números de página visibles en la evidencia. Si no hay página, usa [].
-- evidence: 1 o 2 fragmentos cortos para justificar el concepto; no copies párrafos largos.
+- evidence: exactamente 1 fragmento corto (máximo una o dos frases) para justificar el concepto; no copies párrafos largos.
 
 LABORATORIOS AUTOMÁTICOS
 Para CADA concepto decide si un laboratorio realmente mejora la comprensión. El usuario no elegirá manualmente el tipo: tu recomendación se convierte directamente en la experiencia de Comprende.
@@ -229,7 +229,7 @@ ${evidence}`
 
   try {
     const result = await createStructuredResponse(prompt, 'semantic_document_map', conceptSchema as any, {
-      maxOutputTokens: 6800,
+      maxOutputTokens: 9000,
       systemPrompt: 'Eres un arquitecto de conocimiento y tutor universitario. Extraes estructura conceptual de documentos en español con extrema fidelidad a la evidencia. Construyes mapas de dos niveles: ruta esencial y detalles profundos. Priorizas conceptos enseñables, relaciones útiles y prerrequisitos reales; haces auditoría de cobertura y evitas palabras genéricas o taxonomías inventadas. Además eliges entre laboratorios especializados y plantillas componibles seguras. Para conceptos futuros puedes recomendar un Auto-Lab genérico, pero nunca código arbitrario ni una interacción sin valor pedagógico.',
     })
 
@@ -249,7 +249,7 @@ ${evidence}`
         relations,
         learningOrder: learningOrder.length ? learningOrder : concepts.filter((concept: any) => concept.tier === 'essential').map((concept: any) => concept.label),
         warnings: [hfWarning, hfModel ? `BGE-M3 agrupó ${chunks.length} chunks en ${clusterCount} grupos semánticos antes del análisis pedagógico.` : ''].filter(Boolean),
-        labPlannerVersion: '2.0',
+        labPlannerVersion: '2.0.3',
       },
     }
     await writeAiCache({

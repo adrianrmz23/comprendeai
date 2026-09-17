@@ -139,3 +139,8 @@ Validación de producción:
 ```bash
 npm run build
 ```
+
+
+## 2.0.3 — análisis semántico robusto
+
+El mapa semántico limita el tamaño del JSON estructurado y reintenta automáticamente con más presupuesto cuando OpenAI devuelve una respuesta incompleta por límite de tokens. Esto evita que PDFs largos caigan al mapa local por errores `Unterminated string in JSON`.
