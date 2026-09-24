@@ -144,3 +144,29 @@ npm run build
 ## 2.0.3 — análisis semántico robusto
 
 El mapa semántico limita el tamaño del JSON estructurado y reintenta automáticamente con más presupuesto cuando OpenAI devuelve una respuesta incompleta por límite de tokens. Esto evita que PDFs largos caigan al mapa local por errores `Unterminated string in JSON`.
+
+## 2.0.4 — Orden del documento
+
+La secuencia de estudio ahora usa el orden en que el PDF desarrolla los temas como fuente de verdad. Los prerrequisitos siguen visibles como ayudas de repaso, pero ya no pueden reordenar la ruta. El selector de conceptos, la vista de materiales y el botón final de cada sesión también siguen esa secuencia.
+
+Para documentos analizados con versiones anteriores, usa **Reanalizar mapa** una vez para regenerar la ruta con esta regla.
+
+
+## 2.0.6 — Lecciones completadas
+
+- Una lección queda marcada como completada al finalizar y evaluar `Explícamelo tú`.
+- Se guarda `completedAt`, `completionScore` y el número de cierres de sesión dentro de la memoria por concepto.
+- El mapa del documento muestra ✓ y el porcentaje de cierre en cada tema completado.
+- Materiales muestra cuántas lecciones del documento ya están completadas.
+- La sesión muestra un banner claro `Lección completada` con el resultado final.
+- El paso al siguiente tema se habilita después de la evaluación final, evitando avanzar sin cerrar la lección.
+- El estado se sincroniza automáticamente con Supabase dentro de `learning_memory`; no requiere migración SQL nueva.
+
+
+## 2.0.6 — Ruta limpia y prueba final contextual
+
+- El selector principal muestra únicamente los temas de la ruta del documento.
+- Los conceptos de profundidad se consideran subtemas opcionales y se exploran desde el mapa.
+- La prueba final solo exige conexiones con temas anteriores que ya fueron completados.
+- En el primer tema nunca se pide relacionar la explicación con un concepto posterior.
+- No hace falta reanalizar un PDF para aplicar esta corrección: se resuelve en la capa de sesión/evaluación.

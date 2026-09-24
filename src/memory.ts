@@ -24,6 +24,9 @@ export type ConceptMemory = {
   nextReviewAt: string
   lastEvent: MemoryEventType
   history: MemoryHistoryItem[]
+  completedAt?: string
+  completionScore?: number
+  completionCount?: number
 }
 
 export type LearningMemory = {
@@ -40,6 +43,7 @@ export type MemoryEvent = {
   practiceAccuracy?: number
   teachBackScore?: number
   detail?: string
+  completed?: boolean
 }
 
 const STORAGE_KEY = 'comprende-learning-memory-v1'
@@ -119,6 +123,9 @@ export function applyMemoryEvent(memory: LearningMemory, event: MemoryEvent): Le
       ...(previous?.history || []),
       { at: now.toISOString(), type: event.type, score, detail: event.detail },
     ].slice(-18),
+    completedAt: event.completed ? now.toISOString() : previous?.completedAt,
+    completionScore: event.completed ? score : previous?.completionScore,
+    completionCount: (previous?.completionCount || 0) + (event.completed ? 1 : 0),
   }
 
   return { ...memory, concepts: { ...memory.concepts, [id]: record } }
@@ -171,4 +178,12 @@ export function memoryLabel(record: ConceptMemory) {
   if (status === 'fragile') return 'Frágil'
   if (status === 'solid') return 'Sólido'
   return 'Aprendiendo'
+}
+
+export function conceptIsCompleted(record: ConceptMemory | undefined) {
+  return Boolean(record?.completedAt || typeof record?.teachBackScore === 'number')
+}
+
+export function conceptCompletionScore(record: ConceptMemory | undefined) {
+  return record?.completionScore ?? record?.teachBackScore ?? record?.mastery ?? 0
 }

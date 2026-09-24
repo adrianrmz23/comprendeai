@@ -42,10 +42,10 @@ type StepId = 'problem' | 'intuition' | 'visual' | 'formal' | 'lab' | 'guided' |
 type Blocker = 'terms' | 'formula' | 'use' | 'prereq'
 type LearningMode = 'explain-first' | 'challenge-first'
 
-import { findRelevantExcerpts, readStudyFile, type StudyMaterial } from './materials'
+import { findRelevantExcerpts, readStudyFile, type StudyMaterial, type SemanticConcept } from './materials'
 import { enhanceSessionWithAI, evaluateRecall, explainConceptWithAI, type ExplanationVariant } from './ai'
 import { buildLocalStudySession, type RecallEvaluation, type StudySession } from './sessionGenerator'
-import { analyzeMaterialSemantically, buildLocalSemanticAnalysis, conceptsFromSemantic, normalizeSemanticAnalysis } from './semantic'
+import { analyzeMaterialSemantically, buildLocalSemanticAnalysis, conceptsFromSemantic, normalizeSemanticAnalysis, sortConceptsByDocumentOrder } from './semantic'
 import { applyMemoryEvent, dueReviews, formatReviewDate, fragileConcepts, getMemoryRecords, loadLearningMemory, memoryLabel, memoryStatus, saveLearningMemory, solidConcepts, type LearningMemory, type MemoryEvent } from './memory'
 import DashboardView from './dashboardView'
 import { subjectFor } from './dashboard'
@@ -97,6 +97,22 @@ const blockers: Record<Blocker, { title: string; body: string; action: string }>
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
+}
+
+function conceptRecord(memory: LearningMemory, materialId: string, concept: string) {
+  const normalized = concept.toLocaleLowerCase('es-MX')
+  return Object.values(memory.concepts).find(record =>
+    record.materialId === materialId &&
+    record.concept.toLocaleLowerCase('es-MX') === normalized
+  )
+}
+
+function lessonIsCompleted(record: ReturnType<typeof conceptRecord>) {
+  return Boolean(record?.completedAt || typeof record?.teachBackScore === 'number')
+}
+
+function lessonCompletionScore(record: ReturnType<typeof conceptRecord>) {
+  return record?.completionScore ?? record?.teachBackScore ?? record?.mastery ?? 0
 }
 
 function App() {
@@ -270,6 +286,7 @@ function App() {
           <MaterialsView
             materials={materials}
             setMaterials={setMaterials}
+            learningMemory={learningMemory}
             onStudy={(id, concept) => { setActiveMaterialId(id); setActiveConcept(concept); setView('material-study'); window.scrollTo({ top: 0 }) }}
             onMap={(id) => { setActiveMaterialId(id); setView('material-map'); window.scrollTo({ top: 0 }) }}
           />
@@ -277,6 +294,7 @@ function App() {
         {view === 'material-map' && activeMaterialId && (
           <MaterialMapView
             material={materials.find(m => m.id === activeMaterialId) || null}
+            learningMemory={learningMemory}
             onBack={() => setView('materials')}
             onStudy={(concept) => { setActiveConcept(concept); setView('material-study'); window.scrollTo({ top: 0 }) }}
             onUpdate={(updated) => setMaterials(materials.map(m => m.id === updated.id ? updated : m))}
@@ -341,7 +359,7 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
         <div className="brand-mark">C</div>
         <div>
           <strong>Comprende</strong>
-          <span>VERSIÓN 1.4 · INTERACTIVE LABS</span>
+          <span>VERSIÓN 2.0.6 · UNIVERSAL LEARNING ENGINE</span>
         </div>
       </div>
       <nav className="nav-list">
@@ -366,7 +384,7 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
         </button>
       </div>
       <div className="sidebar-footer sidebar-footer-v10">
-        <small>Comprende 1.4 · Supabase Sync</small>
+        <small>Comprende 2.0.6 · Supabase Sync</small>
         <button onClick={() => setView('session')}>Abrir demo de Bayes</button>
       </div>
     </aside>
@@ -378,7 +396,7 @@ function Topbar({ view, setView, email, syncStatus, syncError, onSignOut }: { vi
   return (
     <header className="topbar">
       <div className="crumbs">
-        <span>Comprende 1.4</span>
+        <span>Comprende 2.0.6</span>
         {view === 'session' && <><ChevronRight size={14} /><strong>Teorema de Bayes</strong></>}
         {(view === 'materials' || view === 'material-study' || view === 'material-map') && <><ChevronRight size={14} /><strong>{view === 'materials' ? 'Materiales' : view === 'material-map' ? 'Mapa del documento' : 'Mesa de comprensión'}</strong></>}
         {view === 'practice' && <><ChevronRight size={14} /><strong>Repaso inteligente</strong></>}
@@ -699,7 +717,7 @@ function PracticeView({ setView, learningMemory, materials, onReview }: { setVie
 
   return <div className="page review-page">
     <section className="generic-hero review-hero">
-      <span className="tiny-label">COMPRENDE 1.4 · REPASO INTELIGENTE</span>
+      <span className="tiny-label">COMPRENDE 2.0.6 · REPASO INTELIGENTE</span>
       <h1>No repases todo. <span>Recupera lo que empieza a enfriarse.</span></h1>
       <p>Comprende programa el siguiente contacto usando lo que hiciste en práctica y en “Explícamelo tú”. Un fallo acorta el intervalo; una recuperación sólida lo alarga.</p>
     </section>
@@ -743,7 +761,7 @@ function ProgressView({ mastery, completedSteps, startSession, learningMemory, o
 
   return <div className="page memory-progress-page">
     <section className="generic-hero">
-      <span className="tiny-label">COMPRENDE 1.4 · MEMORIA Y DOMINIO</span>
+      <span className="tiny-label">COMPRENDE 2.0.6 · MEMORIA Y DOMINIO</span>
       <h1>Lo importante no es haberlo visto. <span>Es poder recuperarlo después.</span></h1>
       <p>Este tablero usa evidencia de práctica y active recall. El porcentaje ya no representa páginas abiertas, sino señales de que puedes usar y explicar el concepto.</p>
     </section>
@@ -778,11 +796,13 @@ function ProgressView({ mastery, completedSteps, startSession, learningMemory, o
 function MaterialsView({
   materials,
   setMaterials,
+  learningMemory,
   onStudy,
   onMap,
 }: {
   materials: StudyMaterial[]
   setMaterials: (materials: StudyMaterial[]) => void
+  learningMemory: LearningMemory
   onStudy: (id: string, concept: string) => void
   onMap: (id: string) => void
 }) {
@@ -877,7 +897,7 @@ function MaterialsView({
         <ChevronRight size={15} />
         <div><Sparkles size={17} /><span><b>4. IA</b><small>depura jerarquía y prerrequisitos</small></span></div>
         <ChevronRight size={15} />
-        <div><Route size={17} /><span><b>5. Ruta</b><small>qué aprender primero</small></span></div>
+        <div><Route size={17} /><span><b>5. Ruta</b><small>orden original del documento</small></span></div>
       </section>
 
       <div className="materials-toolbar">
@@ -900,6 +920,13 @@ function MaterialsView({
         <div className="materials-list">
           {visible.map(material => {
             const semantic = material.semantic || buildLocalSemanticAnalysis(material)
+            const normalizedSemantic = normalizeSemanticAnalysis(semantic)
+            const previewConcepts = [
+              ...normalizedSemantic.learningOrder.map(label => normalizedSemantic.concepts.find(concept => concept.label === label)).filter(Boolean),
+              ...sortConceptsByDocumentOrder(normalizedSemantic.concepts.filter(concept => !normalizedSemantic.learningOrder.includes(concept.label)), normalizedSemantic.learningOrder),
+            ].filter(Boolean) as SemanticConcept[]
+            const firstDocumentConcept = normalizedSemantic.learningOrder[0] || previewConcepts[0]?.label || material.concepts[0]?.label || ''
+            const completedCount = normalizedSemantic.learningOrder.filter(label => lessonIsCompleted(conceptRecord(learningMemory, material.id, label))).length
             return (
               <article className="material-card semantic-card" key={material.id}>
                 <div className="material-card-head">
@@ -917,15 +944,20 @@ function MaterialsView({
                   <span><b>{semantic.concepts.length}</b> conceptos</span>
                   <span><b>{semantic.relations.length}</b> relaciones</span>
                   <span><b>{semantic.chunksAnalyzed}</b> chunks</span>
-                  <span><b>{availableLabs(normalizeSemanticAnalysis(semantic).concepts).length}</b> auto-labs</span>
+                  <span><b>{availableLabs(normalizedSemantic.concepts).length}</b> auto-labs</span>
+                  <span className={completedCount ? 'material-completed-summary' : ''}><b>{completedCount}/{normalizedSemantic.learningOrder.length || 0}</b> completadas</span>
                 </div>
 
                 <div className="concept-cloud semantic-cloud">
-                  {material.concepts.slice(0, 10).map(concept => (
-                    <button key={concept.label} onClick={() => onStudy(material.id, concept.label)}>
-                      <span>{concept.label}</span><em>{concept.score}</em>
-                    </button>
-                  ))}
+                  {previewConcepts.slice(0, 10).map((concept, index) => {
+                    const record = conceptRecord(learningMemory, material.id, concept.label)
+                    const completed = lessonIsCompleted(record)
+                    return (
+                      <button className={completed ? 'completed' : ''} key={concept.label} onClick={() => onStudy(material.id, concept.label)}>
+                        <span>{completed && <Check size={12} />} {index + 1}. {concept.label}</span><em>{completed ? `${lessonCompletionScore(record)}%` : concept.pages?.[0] ? `p.${concept.pages[0]}` : concept.importance}</em>
+                      </button>
+                    )
+                  })}
                 </div>
                 {semantic.engine === 'local' && semantic.warnings?.[0] && (
                   <div className="semantic-inline-warning" title={semantic.warnings[0]}>
@@ -936,7 +968,7 @@ function MaterialsView({
                   <span>{semantic.documentSummary}</span>
                   <div>
                     <button className="secondary-button compact-button" onClick={() => onMap(material.id)}><Network size={14} /> Ver mapa</button>
-                    <button className="text-button" onClick={() => onStudy(material.id, material.concepts[0]?.label || '')}>Estudiar <ArrowRight size={14} /></button>
+                    <button className="text-button" onClick={() => onStudy(material.id, firstDocumentConcept)}>Estudiar desde el inicio <ArrowRight size={14} /></button>
                   </div>
                 </div>
               </article>
@@ -950,11 +982,13 @@ function MaterialsView({
 
 function MaterialMapView({
   material,
+  learningMemory,
   onBack,
   onStudy,
   onUpdate,
 }: {
   material: StudyMaterial | null
+  learningMemory: LearningMemory
   onBack: () => void
   onStudy: (concept: string) => void
   onUpdate: (material: StudyMaterial) => void
@@ -1020,7 +1054,7 @@ function MaterialMapView({
         <article><BookOpen size={19} /><strong>{semantic.concepts.filter(c => c.category === 'foundation' && c.tier === 'essential').length}</strong><span>bases esenciales</span></article>
         <article><Target size={19} /><strong>{semantic.concepts.filter(c => c.category === 'principal' && c.tier === 'essential').length}</strong><span>ideas troncales</span></article>
         <article><Layers3 size={19} /><strong>{semantic.concepts.filter(c => c.tier === 'deep').length}</strong><span>detalles profundos</span></article>
-        <article><Route size={19} /><strong>{semantic.learningOrder.length}</strong><span>pasos de la ruta</span></article>
+        <article><Route size={19} /><strong>{semantic.learningOrder.length}</strong><span>temas en orden</span></article>
         <article><FlaskConical size={19} /><strong>{labs.length}</strong><span>labs automáticos</span></article>
       </div>
 
@@ -1053,6 +1087,7 @@ function MaterialMapView({
             <span className={`concept-category ${selected.category}`}>{categoryLabel[selected.category]}</span>
             <small className={selected.tier === 'deep' ? 'tier-badge deep' : 'tier-badge'}>{selected.tier === 'deep' ? 'Profundidad' : 'Esencial'}</small>
             <h3>{selected.label}</h3><p>{selected.description}</p>
+            {lessonIsCompleted(conceptRecord(learningMemory, material.id, selected.label)) && <div className="lesson-completed-pill"><Check size={14} /> Completada · {lessonCompletionScore(conceptRecord(learningMemory, material.id, selected.label))}%</div>}
             {selected.pages.length > 0 && <div className="submap-pages">Aparece en páginas {selected.pages.join(', ')}</div>}
             {getLabDefinition(selected.label, selected.lab) && <div className="lab-available-badge"><FlaskConical size={14} /><span>{selected.lab?.engine === 'composed' || selected.lab?.labType === 'generic' ? 'Auto-Lab componible' : 'Laboratorio especializado'}</span></div>}
             {selected.lab?.recommended && <div className="auto-lab-explainer"><Sparkles size={15}/><span><b>{getLabDefinition(selected.label, selected.lab)?.shortTitle}</b> · {selected.lab.reason}<span className="auto-lab-confidence">Confianza {selected.lab.confidence}%</span></span></div>}
@@ -1069,13 +1104,15 @@ function MaterialMapView({
       </section>}
 
       <section className="learning-route-section">
-        <div className="section-heading"><div><span className="tiny-label">ORDEN PEDAGÓGICO</span><h2>Apréndelo en este orden</h2></div><p>La ruta contiene solo conceptos esenciales. Los algoritmos, componentes y detalles quedan dentro de sus submapas para no sobrecargarte.</p></div>
+        <div className="section-heading"><div><span className="tiny-label">ORDEN DEL DOCUMENTO</span><h2>Estúdialo en el orden original</h2></div><p>La secuencia respeta el orden en que el PDF desarrolla los temas. Los prerrequisitos se muestran como apoyo, pero nunca adelantan ni mueven un tema.</p></div>
         <div className="learning-route-list">
           {semantic.learningOrder.map((label, index) => {
             const item = semantic.concepts.find(c => c.label === label)
             if (!item) return null
             const lab = getLabDefinition(label, item.lab)
-            return <button key={label} onClick={() => onStudy(label)}><span className="route-number">{index + 1}</span><div><strong>{label}{lab && <em className="route-lab-tag auto"><FlaskConical size={12}/> {item.lab?.engine === 'composed' || item.lab?.labType === 'generic' ? 'Auto-Lab' : 'Lab'}</em>}</strong><small>{categoryLabel[item.category]}{item.prerequisites.length ? ` · requiere: ${item.prerequisites.join(', ')}` : ''}</small></div><ArrowRight size={16} /></button>
+            const record = conceptRecord(learningMemory, material.id, label)
+            const completed = lessonIsCompleted(record)
+            return <button className={completed ? 'completed' : ''} key={label} onClick={() => onStudy(label)}><span className="route-number">{completed ? <Check size={15} /> : index + 1}</span><div><strong>{label}{lab && <em className="route-lab-tag auto"><FlaskConical size={12}/> {item.lab?.engine === 'composed' || item.lab?.labType === 'generic' ? 'Auto-Lab' : 'Lab'}</em>}</strong><small>{completed ? `Completada · ${lessonCompletionScore(record)}%` : `${categoryLabel[item.category]}${item.prerequisites.length ? ` · requiere: ${item.prerequisites.join(', ')}` : ''}`}</small></div>{completed ? <span className="route-completed-badge">Lista</span> : <ArrowRight size={16} />}</button>
           })}
         </div>
       </section>
@@ -1086,16 +1123,20 @@ function MaterialMapView({
           {([['all','Todos'],['foundation','Bases'],['principal','Principales'],['subconcept','Subconceptos'],['application','Aplicaciones']] as const).map(([id, label]) => <button className={filter === id ? 'active' : ''} key={id} onClick={() => setFilter(id)}>{label}</button>)}
         </div>
         <div className="semantic-concept-grid">
-          {concepts.map(concept => <article className="semantic-concept-card" key={concept.label}>
-            <div className="concept-card-top"><div><span className={`concept-category ${concept.category}`}>{categoryLabel[concept.category]}</span><span className={concept.tier === 'deep' ? 'tier-badge deep' : 'tier-badge'}>{concept.tier === 'deep' ? 'Profundidad' : 'Esencial'}</span></div><em>{concept.importance}%</em></div>
+          {concepts.map(concept => {
+            const record = conceptRecord(learningMemory, material.id, concept.label)
+            const completed = lessonIsCompleted(record)
+            return <article className={completed ? 'semantic-concept-card completed' : 'semantic-concept-card'} key={concept.label}>
+            <div className="concept-card-top"><div><span className={`concept-category ${concept.category}`}>{categoryLabel[concept.category]}</span><span className={concept.tier === 'deep' ? 'tier-badge deep' : 'tier-badge'}>{concept.tier === 'deep' ? 'Profundidad' : 'Esencial'}</span>{completed && <span className="concept-completed-badge"><Check size={12}/> Completada</span>}</div><em>{completed ? `${lessonCompletionScore(record)}%` : `${concept.importance}%`}</em></div>
             <h3>{concept.label}</h3>
             {getLabDefinition(concept.label, concept.lab) && <div className="catalog-lab-pill"><FlaskConical size={13}/>{concept.lab?.engine === 'composed' || concept.lab?.labType === 'generic' ? ' Auto-Lab componible' : ' Lab especializado'}</div>}
             {concept.lab?.recommended && <div className="catalog-lab-reason">{concept.lab.reason} · confianza {concept.lab.confidence}%</div>}
             <p>{concept.description}</p>
             {concept.pages.length > 0 && <small className="page-references">Páginas: {concept.pages.join(', ')}</small>}
             {concept.related.length > 0 && <div className="related-tags">{concept.related.slice(0, 4).map(tag => <span key={tag}>{tag}</span>)}</div>}
-            <div className="concept-card-actions"><button className="secondary-button compact-button" onClick={() => openSubmap(concept.label)}><Network size={14} /> Ver submapa</button><button className="text-button" onClick={() => onStudy(concept.label)}>Estudiar <ArrowRight size={14} /></button></div>
-          </article>)}
+            <div className="concept-card-actions"><button className="secondary-button compact-button" onClick={() => openSubmap(concept.label)}><Network size={14} /> Ver submapa</button><button className="text-button" onClick={() => onStudy(concept.label)}>{completed ? 'Repasar' : 'Estudiar'} <ArrowRight size={14} /></button></div>
+          </article>
+          })}
         </div>
       </section>
 
@@ -1121,9 +1162,18 @@ function PrerequisiteGate({
 }) {
   const semantic = normalizeSemanticAnalysis(material.semantic || buildLocalSemanticAnalysis(material))
   const current = semantic.concepts.find(item => item.label === concept)
+  const currentOrderIndex = semantic.learningOrder.indexOf(concept)
+  const currentPrimaryPage = current?.pages?.[0] ?? Number.POSITIVE_INFINITY
   const prerequisites = (current?.prerequisites || [])
     .map(label => semantic.concepts.find(item => item.label === label))
     .filter(Boolean)
+    .filter(item => {
+      if (!item) return false
+      const prerequisiteOrderIndex = semantic.learningOrder.indexOf(item.label)
+      if (currentOrderIndex >= 0 && prerequisiteOrderIndex >= 0) return prerequisiteOrderIndex < currentOrderIndex
+      const prerequisitePage = item.pages?.[0] ?? Number.POSITIVE_INFINITY
+      return prerequisitePage < currentPrimaryPage
+    })
   const storageKey = `comprende-prerequisite-mastery:${material.id}`
   const [mastered, setMastered] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem(storageKey) || '{}') } catch { return {} }
@@ -1166,7 +1216,7 @@ function PrerequisiteGate({
 
   return <section className="prerequisite-gate">
     <div className="prerequisite-gate-head">
-      <div><span className="tiny-label">PRERREQUISITOS ADAPTATIVOS</span><h2>Antes de entrar a {concept}</h2><p>El mapa detectó conocimientos que conviene tener frescos. No tienes que repetir una lección completa: abre un repaso de 3 minutos solo donde haga falta.</p></div>
+      <div><span className="tiny-label">REPASO OPCIONAL · SIN CAMBIAR EL ORDEN</span><h2>Ideas anteriores que pueden ayudarte con {concept}</h2><p>Comprende mantiene el orden del PDF. Aquí solo aparecen conceptos que el documento ya presentó antes; puedes repasarlos 3 minutos sin saltar a un tema posterior.</p></div>
       <div className="prerequisite-progress"><strong>{masteredCount}/{prerequisites.length}</strong><span>listos</span></div>
     </div>
     <div className="prerequisite-list">
@@ -1186,12 +1236,13 @@ function PrerequisiteGate({
         </div>}
       </article>)}
     </div>
-    <div className="prerequisite-gate-footer"><span>Puedes continuar aunque alguno siga pendiente; Comprende lo conservará para tu próxima sesión.</span><button className="primary-button" onClick={onContinue}>Continuar con {concept} <ArrowRight size={15} /></button></div>
+    <div className="prerequisite-gate-footer"><span>Esto es solo un recordatorio: tu siguiente tema sigue siendo el que marca el documento.</span><button className="primary-button" onClick={onContinue}>Continuar con {concept} <ArrowRight size={15} /></button></div>
   </section>
 }
 
 function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, learningMemory, userId }: { material: StudyMaterial | null; initialConcept: string; onBack: () => void; onMemoryEvent: (event: MemoryEvent) => void; learningMemory: LearningMemory; userId: string }) {
-  const initialStudyConcept = initialConcept || material?.concepts[0]?.label || ''
+  const initialSemantic = material ? normalizeSemanticAnalysis(material.semantic || buildLocalSemanticAnalysis(material)) : null
+  const initialStudyConcept = initialConcept || initialSemantic?.learningOrder[0] || material?.concepts[0]?.label || '' 
   const initialCachedSessionEntry = material && initialStudyConcept ? getCachedSessionEntry(material, initialStudyConcept) : null
   const initialCachedSession = initialCachedSessionEntry?.payload || null
   const initialCachedExplanationEntry = material && initialStudyConcept ? getCachedExplanationEntry(material, initialStudyConcept) : null
@@ -1372,7 +1423,8 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
   }
 
   useEffect(() => {
-    const nextConcept = initialConcept || material?.concepts[0]?.label || ''
+    const semanticAtLoad = material ? normalizeSemanticAnalysis(material.semantic || buildLocalSemanticAnalysis(material)) : null
+    const nextConcept = initialConcept || semanticAtLoad?.learningOrder[0] || material?.concepts[0]?.label || ''
     if (!material || !nextConcept) return
     let cancelled = false
     setPrereqGateDismissed(false)
@@ -1432,13 +1484,56 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
   const attributionLabel = explanationAttribution?.provider === 'openai' ? 'OpenAI' : explanationAttribution?.provider || 'IA'
   const modelLabel = explanationAttribution?.model || ''
   const semanticStudyConcept = semanticForStudy.concepts.find(item => item.label === concept)
+  const currentDocumentIndex = semanticForStudy.learningOrder.indexOf(concept)
+  const nextDocumentConcept = currentDocumentIndex >= 0 && currentDocumentIndex < semanticForStudy.learningOrder.length - 1 ? semanticForStudy.learningOrder[currentDocumentIndex + 1] : ''
+  const routeConcepts = semanticForStudy.learningOrder
+    .map(label => semanticForStudy.concepts.find(item => item.label === label))
+    .filter(Boolean) as SemanticConcept[]
+  const extraConcepts = sortConceptsByDocumentOrder(
+    semanticForStudy.concepts.filter(item => !semanticForStudy.learningOrder.includes(item.label)),
+    semanticForStudy.learningOrder,
+  )
+  // La navegación principal sigue únicamente el orden del documento. Los conceptos
+  // de profundidad siguen disponibles desde el mapa, pero no se mezclan con la ruta.
+  const currentDeepConcept = currentDocumentIndex < 0
+    ? extraConcepts.find(item => item.label === concept)
+    : undefined
+  const orderedStudyConcepts = currentDeepConcept ? [currentDeepConcept, ...routeConcepts] : routeConcepts
   const hasPrerequisites = Boolean(semanticStudyConcept?.prerequisites?.length)
+
+  const previousDocumentConcepts = currentDocumentIndex > 0
+    ? semanticForStudy.learningOrder.slice(0, currentDocumentIndex)
+    : []
+  const completedPreviousConcepts = previousDocumentConcepts.filter(label =>
+    lessonIsCompleted(conceptRecord(learningMemory, material.id, label)),
+  )
+  const connectionTarget = completedPreviousConcepts.at(-1) || ''
+  const effectiveTeachBack: StudySession['teachBack'] = connectionTarget
+    ? {
+        prompt: `Explícame ${concept} como si yo fuera un compañero que faltó a clase. Incluye qué es, para qué sirve, cómo se relaciona con ${connectionTarget} —que ya estudiaste— y un ejemplo del mundo real distinto al que acabas de practicar. No necesitas usar conceptos posteriores del documento.`,
+        checklist: [
+          `Definiste ${concept} con tus palabras.`,
+          'Explicaste para qué sirve o qué problema aborda.',
+          `Lo relacionaste con ${connectionTarget}, que ya habías estudiado.`,
+          'Incluiste un ejemplo nuevo o una consecuencia práctica.',
+        ],
+      }
+    : {
+        prompt: `Explícame ${concept} como si yo fuera un compañero que faltó a clase. Incluye qué es, para qué sirve y un ejemplo del mundo real distinto al que acabas de practicar. Como todavía no has completado un tema anterior de esta ruta, no necesitas relacionarlo con conceptos que aparecen después en el documento.`,
+        checklist: [
+          `Definiste ${concept} con tus palabras.`,
+          'Explicaste para qué sirve o qué problema aborda.',
+          'Describiste la idea sin apoyarte en un tema que todavía no has estudiado.',
+          'Incluiste un ejemplo nuevo o una consecuencia práctica.',
+        ],
+      }
 
   const audioText = `${session.concept}. ${session.intuition.summary} ${session.intuition.purpose} Ejemplo: ${session.intuition.example} ${session.intuition.analogy} ${session.intuition.keyIdea}`
   const evaluate = async () => {
     if (!teachBack.trim()) return
     setEvaluating(true)
-    const result = await evaluateRecall(teachBack, material, concept, session)
+    const sessionForEvaluation: StudySession = { ...session, teachBack: effectiveTeachBack }
+    const result = await evaluateRecall(teachBack, material, concept, sessionForEvaluation)
     setEvaluation(result.evaluation)
     setEvaluationSource(result.source)
     onMemoryEvent({
@@ -1449,6 +1544,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       score: result.evaluation.score,
       teachBackScore: result.evaluation.score,
       detail: result.evaluation.verdict,
+      completed: true,
     })
     setEvaluating(false)
   }
@@ -1465,7 +1561,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
   const currentSoloAnswer = currentSoloExercise ? soloAnswers[currentSoloExercise.id] : undefined
   const soloAnsweredEntries = session.solo.exercises.filter(exercise => soloAnswers[exercise.id] !== undefined)
   const soloCorrectCount = soloAnsweredEntries.filter(exercise => soloAnswers[exercise.id] === exercise.correctIndex).length
-  const currentMemory = getMemoryRecords(learningMemory).find(record => record.materialId === material.id && record.concept.toLocaleLowerCase('es-MX') === concept.toLocaleLowerCase('es-MX'))
+  const currentMemory = conceptRecord(learningMemory, material.id, concept)
 
   const goNextSoloExercise = () => {
     if (!currentSoloExercise || currentSoloAnswer === undefined) return
@@ -1507,19 +1603,20 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       <section className="generated-study-header">
         <div>
           <div className="generated-meta-row">
-            <span className="tiny-label">COMPRENDE 1.4 · SESIÓN DE COMPRENSIÓN</span>
+            <span className="tiny-label">COMPRENDE 2.0.6 · SESIÓN DE COMPRENSIÓN</span>
             <span className={generationSource === 'ai' || explanationSource === 'ai' ? 'engine-badge ai' : 'engine-badge'}><Sparkles size={12} /> {generationSource === 'ai' ? 'Sesión IA' : explanationSource === 'ai' ? 'Explicación IA' : 'Motor local'}</span>
             {(enhancing || explaining) && <span className="engine-working">{explaining ? 'Consultando contenido guardado…' : 'Mejorando con IA…'}</span>}
           </div>
           <h1>{concept}</h1>
           <p>{session.objective}</p>
-          <div className="session-facts"><span>≈ {session.estimatedMinutes} min</span><span>{material.name}</span><span>7 pasos</span><span>{learningMode === 'explain-first' ? 'Explicación primero' : 'Descubrimiento primero'}</span>{currentMemory && <span className="memory-fact">Memoria {currentMemory.mastery}% · {formatReviewDate(currentMemory.nextReviewAt)}</span>}</div>
+          <div className="session-facts"><span>≈ {session.estimatedMinutes} min</span><span>{material.name}</span>{currentDocumentIndex >= 0 && <span>Tema {currentDocumentIndex + 1} de {semanticForStudy.learningOrder.length}</span>}<span>7 pasos</span><span>{learningMode === 'explain-first' ? 'Explicación primero' : 'Descubrimiento primero'}</span>{lessonIsCompleted(currentMemory) && <span className="lesson-completed-fact"><Check size={12}/> Completada · {lessonCompletionScore(currentMemory)}%</span>}{currentMemory && <span className="memory-fact">Memoria {currentMemory.mastery}% · {formatReviewDate(currentMemory.nextReviewAt)}</span>}</div>
         </div>
         <div className="generated-actions">
           <label className="concept-select">
-            <span>Cambiar concepto</span>
+            <span>Cambiar tema</span>
             <select value={concept} onChange={e => loadConcept(e.target.value)}>
-              {material.concepts.map(c => <option value={c.label} key={c.label}>{c.label}</option>)}
+              {currentDeepConcept && <option value={currentDeepConcept.label}>Subtema opcional · {currentDeepConcept.label}</option>}
+              {routeConcepts.map((c, index) => <option value={c.label} key={c.label}>{`${index + 1}. ${c.label}`}</option>)}
             </select>
           </label>
           <button className="secondary-button" disabled={enhancing || explaining} onClick={regenerateFullSession}><Sparkles size={14} /> {enhancing ? 'Generando…' : 'Mejorar sesión completa con IA'}</button>
@@ -1692,11 +1789,12 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
         {currentPhase === 'explain' && <>
           <div className="workbench-kicker"><Trophy size={17} /> {phase + 1} · EXPLÍCAMELO TÚ</div>
           <h2>La prueba final es recuperar la idea sin mirar.</h2>
-          <p className="workbench-intro">{session.teachBack.prompt}</p>
+          <p className="workbench-intro">{effectiveTeachBack.prompt}</p>
           <div className="teachback-grid">
-            <div><textarea className="explanation-area" value={teachBack} onChange={e => { setTeachBack(e.target.value); setEvaluation(null) }} placeholder="Explícalo con tus palabras…" /><div className="teachback-checklist">{session.teachBack.checklist.map(item => <span key={item}><Check size={12} />{item}</span>)}</div><button className="primary-button" disabled={!teachBack.trim() || evaluating} onClick={evaluate}>{evaluating ? 'Evaluando…' : 'Evaluar mi comprensión'} <ArrowRight size={15} /></button></div>
+            <div><textarea className="explanation-area" value={teachBack} onChange={e => { setTeachBack(e.target.value); setEvaluation(null) }} placeholder="Explícalo con tus palabras…" /><div className="teachback-checklist">{effectiveTeachBack.checklist.map(item => <span key={item}><Check size={12} />{item}</span>)}</div><button className="primary-button" disabled={!teachBack.trim() || evaluating} onClick={evaluate}>{evaluating ? 'Evaluando…' : 'Evaluar mi comprensión'} <ArrowRight size={15} /></button></div>
             {evaluation ? <aside className={evaluation.score >= 75 ? 'evaluation-card good' : 'evaluation-card'}><div className="evaluation-head"><strong>{evaluation.score}%</strong><span>{evaluationSource === 'ai' ? 'Evaluación IA' : 'Evaluación local'}</span></div><h3>{evaluation.verdict}</h3><div className="evaluation-section"><b>Lo que sí está</b>{evaluation.strengths.map(x => <p key={x}>✓ {x}</p>)}</div><div className="evaluation-section"><b>Lo que falta</b>{evaluation.missing.map(x => <p key={x}>• {x}</p>)}</div><div className="evaluation-next"><strong>Siguiente acción</strong><p>{evaluation.nextAction}</p></div>{currentMemory && <div className="evaluation-memory"><RefreshCw size={14} /><span>Memoria actualizada: {currentMemory.mastery}% · repaso {formatReviewDate(currentMemory.nextReviewAt).toLocaleLowerCase('es-MX')}</span></div>}</aside> : <aside className="evaluation-placeholder"><BrainCircuit size={26} /><strong>Yo no voy a calificar redacción.</strong><p>La evaluación busca si entendiste la idea, qué omitiste y cuál debería ser tu siguiente acción.</p></aside>}
           </div>
+          {evaluation && <div className="lesson-completion-banner"><div className="lesson-completion-icon"><Check size={24} /></div><div><span className="tiny-label">LECCIÓN COMPLETADA</span><h3>Terminaste {concept}</h3><p>Tu resultado final fue <strong>{evaluation.score}%</strong>. La lección queda marcada como completada y Comprende conservará este estado en tu progreso y sincronización.</p></div><div className="lesson-completion-score"><strong>{evaluation.score}%</strong><span>resultado</span></div></div>}
         </>}
       </section>
 
@@ -1709,7 +1807,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       <div className="workbench-footer generated-footer">
         <button className="ghost-button" disabled={phase === 0} onClick={() => { setPhase(Math.max(0, phase - 1)); setRescue(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><ArrowLeft size={15} /> Anterior</button>
         <span>{phase + 1} / {phaseConfigs.length}</span>
-        {phase < phaseConfigs.length - 1 ? <button className="primary-button" onClick={() => { setPhase(phase + 1); setRescue(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Siguiente <ArrowRight size={15} /></button> : <button className="primary-button" onClick={() => { resetInteraction(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><RotateCcw size={15} /> Repetir sesión</button>}
+        {phase < phaseConfigs.length - 1 ? <button className="primary-button" onClick={() => { setPhase(phase + 1); setRescue(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Siguiente <ArrowRight size={15} /></button> : !evaluation ? <button className="primary-button completion-required-button" disabled><Check size={15} /> Evalúa tu comprensión para completar</button> : nextDocumentConcept ? <button className="primary-button document-next-button" onClick={() => loadConcept(nextDocumentConcept)}>Siguiente tema: {nextDocumentConcept} <ArrowRight size={15} /></button> : <button className="primary-button" onClick={() => { resetInteraction(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><RotateCcw size={15} /> Repetir sesión</button>}
       </div>
     </div>
   )

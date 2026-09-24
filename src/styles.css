@@ -366,3 +366,33 @@
   line-height: 1.45;
 }
 .semantic-inline-warning svg { flex: 0 0 auto; margin-top: 2px; }
+
+
+/* Comprende 2.0.6 · Lesson completion states */
+.lesson-completed-fact{display:inline-flex!important;align-items:center;gap:5px;background:#eaf8f2!important;border-color:#c7e8d9!important;color:#18765a!important;font-weight:900}
+.lesson-completion-banner{margin-top:18px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;background:linear-gradient(135deg,#edf9f4,#f8fffb);border:1px solid #bfe4d2;border-radius:17px;padding:17px 18px;color:#245f4d}
+.lesson-completion-icon{width:44px;height:44px;border-radius:14px;background:#238966;color:#fff;display:grid;place-items:center}
+.lesson-completion-banner .tiny-label{color:#268265!important;margin-bottom:3px;display:block}
+.lesson-completion-banner h3{font-family:Manrope;font-size:18px;margin:0 0 4px;color:#1d473a}
+.lesson-completion-banner p{font-size:13px;line-height:1.55;color:#557469;margin:0}
+.lesson-completion-score{min-width:82px;text-align:center;background:#fff;border:1px solid #cfe9dd;border-radius:13px;padding:10px 12px}
+.lesson-completion-score strong{font-family:Manrope;font-size:25px;line-height:1;color:#1b8060;display:block}
+.lesson-completion-score span{font-size:11px;color:#6e8a80;display:block;margin-top:4px}
+.completion-required-button:disabled{opacity:.58;cursor:not-allowed}
+.learning-route-list>button.completed{border-color:#c8e8da;background:#f4fbf7}
+.learning-route-list>button.completed:hover{border-color:#a8d8c3;background:#eef9f4}
+.learning-route-list>button.completed .route-number{background:#dff4ea;color:#19785a}
+.learning-route-list>button.completed small{color:#218060;font-weight:800}
+.route-completed-badge{display:inline-flex;align-items:center;justify-content:center;border:1px solid #c7e8da;background:#e8f8f0;color:#197659;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900}
+.lesson-completed-pill{display:inline-flex;align-items:center;gap:6px;margin:9px 0 2px;padding:6px 9px;border-radius:999px;background:#e9f8f1;border:1px solid #caeadc;color:#1b7a5c;font-size:12px;font-weight:900}
+.semantic-concept-card.completed{border-color:#c9e7da;background:linear-gradient(180deg,#fff,#fbfffd)}
+.concept-completed-badge{display:inline-flex;align-items:center;gap:4px;margin-left:5px;border-radius:999px;background:#e8f8f0;color:#1b775a;padding:4px 7px;font-size:10px;font-weight:900}
+.material-completed-summary{background:#eaf8f2!important;border-color:#cbeadd!important;color:#19775b!important}
+.semantic-cloud button.completed{border-color:#c9e8db!important;background:#f2faf6!important;color:#1f735a!important}
+.semantic-cloud button.completed span{display:inline-flex;align-items:center;gap:4px}
+.semantic-cloud button.completed em{color:#18805f!important;font-weight:900}
+@media(max-width:760px){
+  .lesson-completion-banner{grid-template-columns:auto 1fr}
+  .lesson-completion-score{grid-column:1/-1;width:100%}
+  .route-completed-badge{font-size:10px;padding:4px 7px}
+}

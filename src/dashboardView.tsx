@@ -100,7 +100,7 @@ export default function DashboardView({
     <div className="page dashboard-v10">
       <section className="dashboard-hero-v10">
         <div>
-          <div className="eyebrow"><Sparkles size={16} /> COMPRENDE 1.4 · TU SISTEMA DE ESTUDIO</div>
+          <div className="eyebrow"><Sparkles size={16} /> COMPRENDE 2.0.6 · TU SISTEMA DE ESTUDIO</div>
           <h1>Hoy no necesitas estudiar todo.<br /><span>Necesitas estudiar lo correcto.</span></h1>
           <p>Tu panel reúne documentos, mapa semántico, práctica, memoria y repaso. Comprende usa la evidencia de lo que realmente puedes recuperar, no solo el tiempo que pasaste leyendo.</p>
         </div>
@@ -171,9 +171,9 @@ export default function DashboardView({
           {materials.length ? <div className="document-progress-list-v10">{materials.slice(0, 6).map(material => {
             const progress = documentProgress(material, learningMemory)
             return <article key={material.id}>
-              <div className="document-progress-head-v10"><div><strong>{material.name}</strong><span>{progress.tracked}/{progress.total || '—'} esenciales con evidencia · dominio medio {progress.average}%</span></div><button onClick={() => onOpenMap(material.id)} title="Abrir mapa"><Network size={16} /></button></div>
+              <div className="document-progress-head-v10"><div><strong>{material.name}</strong><span>{progress.completed}/{progress.total || '—'} lecciones completadas · dominio medio {progress.average}%</span></div><button onClick={() => onOpenMap(material.id)} title="Abrir mapa"><Network size={16} /></button></div>
               <div className="document-progress-bar-v10"><span style={{ width: `${progress.percent}%` }} /></div>
-              <div className="document-progress-foot-v10"><span>{progress.mastered} sólidos</span><b>{progress.percent}% de esenciales dominados</b></div>
+              <div className="document-progress-foot-v10"><span>{progress.mastered} sólidos · {progress.tracked} con evidencia</span><b>{progress.percent}% del documento completado</b></div>
             </article>
           })}</div> : <div className="dashboard-empty-v10 compact"><FileText size={25} /><p>Aún no hay documentos para medir.</p></div>}
         </div>

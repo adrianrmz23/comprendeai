@@ -72,6 +72,38 @@ function pagesFor(material: StudyMaterial, label: string) {
     .map(item => item.page)
 }
 
+
+function sourcePositionFor(material: StudyMaterial, label: string) {
+  const normalizedLabel = normalize(label)
+  const fullText = normalize(material.text)
+  const exact = normalizedLabel ? fullText.indexOf(normalizedLabel) : -1
+  if (exact >= 0) return exact
+  const terms = normalizedLabel.split(' ').filter(term => term.length >= 4)
+  if (!terms.length) return Number.POSITIVE_INFINITY
+  let best = Number.POSITIVE_INFINITY
+  for (const term of terms) {
+    const index = fullText.indexOf(term)
+    if (index >= 0) best = Math.min(best, index)
+  }
+  return best
+}
+
+function primaryPage(concept: SemanticConcept) {
+  return concept.pages?.length && Number.isFinite(concept.pages[0]) ? concept.pages[0] : Number.POSITIVE_INFINITY
+}
+
+export function sortConceptsByDocumentOrder(concepts: SemanticConcept[], preferredOrder: string[] = []) {
+  const preferred = new Map(preferredOrder.map((label, index) => [label, index]))
+  return concepts.slice().sort((a, b) => {
+    const pageDiff = primaryPage(a) - primaryPage(b)
+    if (pageDiff !== 0) return pageDiff
+    const aiA = preferred.get(a.label) ?? Number.POSITIVE_INFINITY
+    const aiB = preferred.get(b.label) ?? Number.POSITIVE_INFINITY
+    if (aiA !== aiB) return aiA - aiB
+    return b.importance - a.importance
+  })
+}
+
 function conceptCategory(index: number, label: string, labels: string[]): SemanticConcept['category'] {
   const normalized = normalize(label)
   const hasBroader = labels.some(other => other !== label && normalized.includes(normalize(other)) && normalize(other).split(' ').length < normalized.split(' ').length)
@@ -133,24 +165,23 @@ export function buildLocalSemanticAnalysis(material: StudyMaterial): SemanticDoc
     })
   }
 
-  const learningOrder = concepts.filter(concept => concept.tier === 'essential')
-    .sort((a, b) => {
-      const categoryWeight = { foundation: 0, principal: 1, subconcept: 2, application: 3 }
-      return categoryWeight[a.category] - categoryWeight[b.category] || b.importance - a.importance
-    })
+  const learningOrder = concepts
+    .filter(concept => concept.tier === 'essential')
+    .slice()
+    .sort((a, b) => primaryPage(a) - primaryPage(b) || sourcePositionFor(material, a.label) - sourcePositionFor(material, b.label) || b.importance - a.importance)
     .map(c => c.label)
 
   return {
     engine: 'local',
     model: 'heurística semántica local',
     generatedAt: new Date().toISOString(),
-    documentSummary: `Mapa preliminar generado localmente a partir de ${concepts.length} conceptos recurrentes del documento.`,
+    documentSummary: `Mapa preliminar generado localmente con ${concepts.length} conceptos y una ruta que conserva el orden de aparición del documento.`,
     chunksAnalyzed: makeSemanticChunks(material).length,
     concepts,
     relations: relations.slice(0, 28),
     learningOrder,
-    warnings: ['Mapa preliminar: conecta Hugging Face + OpenAI para depurar nombres, relaciones y prerrequisitos semánticamente.'],
-    labPlannerVersion: '2.0-local',
+    warnings: ['Mapa preliminar: la ruta respeta el orden del documento; Hugging Face + OpenAI pueden depurar nombres, relaciones y cobertura sin reordenar el temario.'],
+    labPlannerVersion: '2.0.4-local-document-order',
   }
 }
 
@@ -204,7 +235,7 @@ export function normalizeSemanticAnalysis(analysis: SemanticDocumentAnalysis): S
       studyQuestion: concept.studyQuestion || `¿Qué problema resuelve ${concept.label} y qué cambia cuando lo entiendes?`,
       prerequisites: concept.prerequisites || [],
       related: concept.related || [],
-      pages: concept.pages || [],
+      pages: Array.isArray(concept.pages) ? [...new Set(concept.pages.filter(page => Number.isFinite(page)))].map(Number) : [],
       evidence: concept.evidence || [],
       lab: (() => {
         const inferred = inferLabRecommendation(concept.label, concept.description || concept.evidence?.[0] || '')
@@ -264,13 +295,11 @@ export function normalizeSemanticAnalysis(analysis: SemanticDocumentAnalysis): S
     })
   })
 
-  const essentialOrder = (analysis.learningOrder || []).filter(label => conceptByName.get(label)?.tier === 'essential')
-  const missingEssential = concepts
-    .filter(concept => concept.tier === 'essential' && !essentialOrder.includes(concept.label))
-    .sort((a, b) => b.importance - a.importance)
-    .map(concept => concept.label)
+  const suppliedOrder = (analysis.learningOrder || []).filter(label => conceptByName.get(label)?.tier === 'essential')
+  const essentialConcepts = concepts.filter(concept => concept.tier === 'essential')
+  const documentOrdered = sortConceptsByDocumentOrder(essentialConcepts, suppliedOrder).map(concept => concept.label)
 
-  return { ...analysis, concepts, relations: [...relationMap.values()], learningOrder: [...essentialOrder, ...missingEssential] }
+  return { ...analysis, concepts, relations: [...relationMap.values()], learningOrder: documentOrdered }
 }
 
 export function conceptsFromSemantic(analysis: SemanticDocumentAnalysis) {

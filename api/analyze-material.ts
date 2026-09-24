@@ -2,7 +2,7 @@ import { createStructuredResponse } from './_openai.js'
 import { cosine, embedWithHuggingFace } from './_huggingface.js'
 import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
-const PROMPT_VERSION = 'semantic-map-v2.0.3-bounded-json'
+const PROMPT_VERSION = 'semantic-map-v2.0.4-document-order'
 
 type Chunk = { id: string; page: number | null; text: string }
 type LocalCandidate = { label: string; score: number; snippet: string }
@@ -96,6 +96,50 @@ const conceptSchema = {
   },
 } as const
 
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLocaleLowerCase('es-MX')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9ñ ]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function firstDevelopmentRank(concept: any, chunks: Chunk[], preferredOrder: string[]) {
+  // pages[0] is explicitly requested from the model as the PRIMARY development page.
+  const primaryPage = Array.isArray(concept?.pages) && Number.isFinite(concept.pages[0]) ? Number(concept.pages[0]) : Number.POSITIVE_INFINITY
+  const label = normalizeSearchText(String(concept?.label || ''))
+  const terms = label.split(' ').filter(term => term.length >= 4)
+  let chunkIndex = Number.POSITIVE_INFINITY
+  for (let i = 0; i < chunks.length; i++) {
+    const haystack = normalizeSearchText(chunks[i].text)
+    if (label && haystack.includes(label)) { chunkIndex = i; break }
+    if (terms.length >= 2 && terms.every(term => haystack.includes(term))) { chunkIndex = i; break }
+  }
+  const aiIndex = preferredOrder.indexOf(concept?.label)
+  return {
+    primaryPage,
+    chunkIndex,
+    aiIndex: aiIndex >= 0 ? aiIndex : Number.POSITIVE_INFINITY,
+  }
+}
+
+function orderEssentialConceptsByDocument(concepts: any[], chunks: Chunk[], preferredOrder: string[]) {
+  return concepts
+    .filter(concept => concept?.tier === 'essential')
+    .map(concept => ({ concept, rank: firstDevelopmentRank(concept, chunks, preferredOrder) }))
+    .sort((a, b) => {
+      if (a.rank.primaryPage !== b.rank.primaryPage) return a.rank.primaryPage - b.rank.primaryPage
+      // Within the same page, preserve the model's explicit source-order judgment first.
+      if (a.rank.aiIndex !== b.rank.aiIndex) return a.rank.aiIndex - b.rank.aiIndex
+      if (a.rank.chunkIndex !== b.rank.chunkIndex) return a.rank.chunkIndex - b.rank.chunkIndex
+      return 0
+    })
+    .map(item => item.concept.label)
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const body = req.body || {}
@@ -155,7 +199,7 @@ export default async function handler(req: any, res: any) {
   const prompt = `Analiza pedagógicamente el documento "${String(body.materialName || 'material')}" para una maestría en IA y Ciencia de Datos.
 
 OBJETIVO
-Construye un mapa de conocimiento de dos niveles para APRENDER, no un resumen ni un índice copiado. El primer nivel debe conservar una ruta esencial corta; el segundo puede guardar detalles útiles dentro de conceptos mayores.
+Construye un mapa de conocimiento de dos niveles para APRENDER. La estructura conceptual puede enriquecer el documento, pero la SECUENCIA DE ESTUDIO debe respetar el orden en que el documento desarrolla sus temas. El primer nivel conserva una ruta esencial corta; el segundo guarda detalles útiles dentro de conceptos mayores.
 
 REGLAS DE COBERTURA
 - Usa exclusivamente la evidencia incluida. No inventes conceptos solo porque sean comunes en la materia.
@@ -177,6 +221,7 @@ CLASIFICACIÓN PEDAGÓGICA
 - No modeles Naive Bayes como parte de Redes Bayesianas: si ambos aparecen, normalmente son conceptos relacionados que comparten Bayes e independencia condicional, salvo que la evidencia del documento establezca explícitamente una jerarquía distinta.
 - studyQuestion debe ser una pregunta breve que compruebe comprensión conceptual, no memoria literal.
 - pages solo puede contener números de página visibles en la evidencia. Si no hay página, usa [].
+- IMPORTANTE SOBRE pages: coloca PRIMERO la página donde el concepto se DESARROLLA como tema/sección. Una mención breve en objetivos, índice, introducción, glosario o conclusión NO debe convertirse en la primera página si el concepto tiene un desarrollo posterior. Después puedes añadir otras páginas relevantes en orden ascendente.
 - evidence: exactamente 1 fragmento corto (máximo una o dos frases) para justificar el concepto; no copies párrafos largos.
 
 LABORATORIOS AUTOMÁTICOS
@@ -213,9 +258,12 @@ Para CADA concepto decide si un laboratorio realmente mejora la comprensión. El
 - confidence refleja qué tan claro es el encaje entre el concepto y uno de los motores disponibles.
 - No elijas un laboratorio solo por coincidencia de una palabra. Por ejemplo "sensibilidad" dentro de una definición clínica no implica necesariamente classification si no se estudian métricas de clasificación.
 
-ORDEN
-- learningOrder debe contener SOLO conceptos tier="essential", con nombres exactos, y representar una secuencia pedagógica de dependencias: bases → ideas troncales → extensiones/aplicaciones.
-- No fuerces una única cadena cuando existen ramas independientes. Aun así, entrega un orden lineal razonable para estudiar.
+ORDEN DEL DOCUMENTO — REGLA PRIORITARIA
+- learningOrder debe contener SOLO conceptos tier="essential", con nombres exactos, y seguir ESTRICTAMENTE el orden en que los temas son DESARROLLADOS en el documento: sección 1 → sección 2 → sección 3, etc.
+- NO reordenes learningOrder para satisfacer prerequisites, importancia, dificultad ni una secuencia pedagógica que te parezca mejor. El documento manda.
+- prerequisites sigue describiendo dependencias conceptuales, pero es SOLO metadata de apoyo y nunca debe mover un tema de su posición original.
+- Si un concepto se menciona antes en objetivos/índice/introducción pero se desarrolla formalmente más adelante, usa la posición de su DESARROLLO formal.
+- Si hay varios conceptos esenciales en la misma sección/página, respeta el orden de aparición dentro de esa sección.
 - importance mide relevancia para comprender ESTE documento, no popularidad general.
 
 CONTROL DE CALIDAD
@@ -230,13 +278,14 @@ ${evidence}`
   try {
     const result = await createStructuredResponse(prompt, 'semantic_document_map', conceptSchema as any, {
       maxOutputTokens: 9000,
-      systemPrompt: 'Eres un arquitecto de conocimiento y tutor universitario. Extraes estructura conceptual de documentos en español con extrema fidelidad a la evidencia. Construyes mapas de dos niveles: ruta esencial y detalles profundos. Priorizas conceptos enseñables, relaciones útiles y prerrequisitos reales; haces auditoría de cobertura y evitas palabras genéricas o taxonomías inventadas. Además eliges entre laboratorios especializados y plantillas componibles seguras. Para conceptos futuros puedes recomendar un Auto-Lab genérico, pero nunca código arbitrario ni una interacción sin valor pedagógico.',
+      systemPrompt: 'Eres un arquitecto de conocimiento y tutor universitario. Extraes estructura conceptual de documentos en español con extrema fidelidad a la evidencia. Construyes mapas de dos niveles: ruta esencial y detalles profundos. La ruta esencial SIEMPRE respeta el orden de desarrollo del documento; los prerrequisitos se anotan pero nunca reordenan el temario. Priorizas conceptos enseñables, relaciones útiles y cobertura fiel. Además eliges entre laboratorios especializados y plantillas componibles seguras. Para conceptos futuros puedes recomendar un Auto-Lab genérico, pero nunca código arbitrario ni una interacción sin valor pedagógico.',
     })
 
     const conceptNames = new Set((result.concepts || []).map((concept: any) => concept.label))
     const concepts = (result.concepts || []).filter((concept: any) => concept?.label && concept?.description)
     const relations = (result.relations || []).filter((relation: any) => conceptNames.has(relation.source) && conceptNames.has(relation.target) && relation.source !== relation.target)
-    const learningOrder = (result.learningOrder || []).filter((label: string) => conceptNames.has(label))
+    const aiLearningOrder = (result.learningOrder || []).filter((label: string) => conceptNames.has(label))
+    const documentLearningOrder = orderEssentialConceptsByDocument(concepts, chunks, aiLearningOrder)
 
     const payload = {
       analysis: {
@@ -247,9 +296,9 @@ ${evidence}`
         chunksAnalyzed: chunks.length,
         concepts,
         relations,
-        learningOrder: learningOrder.length ? learningOrder : concepts.filter((concept: any) => concept.tier === 'essential').map((concept: any) => concept.label),
+        learningOrder: documentLearningOrder.length ? documentLearningOrder : aiLearningOrder.length ? aiLearningOrder : concepts.filter((concept: any) => concept.tier === 'essential').map((concept: any) => concept.label),
         warnings: [hfWarning, hfModel ? `BGE-M3 agrupó ${chunks.length} chunks en ${clusterCount} grupos semánticos antes del análisis pedagógico.` : ''].filter(Boolean),
-        labPlannerVersion: '2.0.3',
+        labPlannerVersion: '2.0.4-document-order',
       },
     }
     await writeAiCache({

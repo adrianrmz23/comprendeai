@@ -129,13 +129,15 @@ export function documentProgress(material: StudyMaterial, memory: LearningMemory
   const records = getMemoryRecords(memory).filter(r => r.materialId === material.id)
   const essentialRecords = records.filter(r => essentials.some(c => c.label.toLocaleLowerCase('es-MX') === r.concept.toLocaleLowerCase('es-MX')))
   const mastered = essentialRecords.filter(r => r.mastery >= 82).length
+  const completed = essentialRecords.filter(r => Boolean(r.completedAt || typeof r.teachBackScore === 'number')).length
   const average = essentialRecords.length ? Math.round(essentialRecords.reduce((sum, r) => sum + r.mastery, 0) / essentialRecords.length) : 0
   return {
     total: essentials.length,
     tracked: essentialRecords.length,
+    completed,
     mastered,
     average,
-    percent: essentials.length ? Math.round((mastered / essentials.length) * 100) : 0,
+    percent: essentials.length ? Math.round((completed / essentials.length) * 100) : 0,
   }
 }
 

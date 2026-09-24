@@ -591,11 +591,11 @@ export function buildLocalStudySession(material: StudyMaterial, concept: string)
       exercises: real.solo,
     },
     teachBack: {
-      prompt: `Explícame ${concept} como si yo fuera un compañero que faltó a clase. Incluye qué es, para qué sirve, una conexión con otra idea y un ejemplo del mundo real distinto al que acabas de practicar.`,
+      prompt: `Explícame ${concept} como si yo fuera un compañero que faltó a clase. Incluye qué es, para qué sirve y un ejemplo del mundo real distinto al que acabas de practicar. Las conexiones con otros temas solo deben pedirse cuando esos temas ya fueron estudiados.`,
       checklist: [
         `Definiste ${concept} con tus palabras.`,
         'Explicaste para qué sirve o qué problema aborda.',
-        `Lo conectaste con ${related[0] || 'algún concepto previo'}.`,
+        'No dependiste de conceptos posteriores del documento para explicarlo.',
         'Incluiste un ejemplo nuevo o una consecuencia práctica.',
       ],
     },
@@ -631,8 +631,13 @@ export function evaluateRecallLocally(answer: string, material: StudyMaterial, c
   if (lower.includes(concept.toLocaleLowerCase('es-MX'))) strengths.push('Nombraste explícitamente el concepto central.')
   else missing.push(`Nombra ${concept} y explica su función, no solo el tema general.`)
 
-  if (related.some(term => lower.includes(term.toLocaleLowerCase('es-MX')))) strengths.push('Conectaste la idea con otro concepto del material.')
-  else missing.push(`Añade una conexión con ${related[0] || 'un concepto relacionado'}.`)
+  const connectionCriterion = session.teachBack.checklist.find(item => /relacion|conect/i.test(item))
+  const targetMatch = connectionCriterion?.match(/(?:con|a)\s+(.+?)(?:,|\.| que |$)/i)
+  const expectedTarget = targetMatch?.[1]?.trim() || ''
+  if (connectionCriterion && expectedTarget) {
+    if (lower.includes(expectedTarget.toLocaleLowerCase('es-MX'))) strengths.push(`Conectaste la idea con ${expectedTarget}, que ya estaba en tu ruta previa.`)
+    else missing.push(`Si haces una conexión, usa ${expectedTarget}, que ya habías estudiado; no necesitas adelantar temas posteriores.`)
+  }
 
   const transferWords = ['ejemplo', 'caso', 'podría', 'sirve', 'aplica', 'cuando', 'sistema', 'situación']
   if (transferWords.some(word => lower.includes(word))) strengths.push('Incluiste señales de transferencia hacia una situación concreta.')
