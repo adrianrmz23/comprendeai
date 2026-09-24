@@ -49,12 +49,16 @@ export type StudyMaterial = {
   name: string
   kind: 'pdf' | 'text'
   createdAt: string
+  updatedAt?: string
   subject?: string
   text: string
   pages?: number
   pageRanges?: { page: number; start: number; end: number }[]
   concepts: MaterialConcept[]
   semantic?: SemanticDocumentAnalysis
+  originalFilePath?: string
+  originalFileSize?: number
+  originalMimeType?: string
 }
 
 const STOPWORDS = new Set(`de la el en y a los las del que se por un una con para es al como más su sus o si no lo le desde sobre entre esta este estos estas son ser fue han hay también puede pueden cada muy sin ya cuando donde cual qué cómo porque pero hacia e esa ese esos esas esto esto mismo misma mediante dentro fuera todo toda todos todas otro otra otros otras tener tiene tienen hace hacen así tanto tan uno dos tres primer primera segundo segunda parte forma manera caso casos tipo tipos ejemplo ejemplos datos dato sistema sistemas concepto conceptos tema temas clase clases`.split(/\s+/))
@@ -201,9 +205,12 @@ export async function readStudyFile(file: File): Promise<StudyMaterial> {
     name: file.name,
     kind,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     text,
     pages,
     pageRanges,
+    originalFileSize: file.size,
+    originalMimeType: file.type || (kind === 'pdf' ? 'application/pdf' : 'text/plain'),
     concepts: extractConcepts(text, 18),
   }
 }

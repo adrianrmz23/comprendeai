@@ -46,12 +46,12 @@ import { findRelevantExcerpts, readStudyFile, type StudyMaterial, type SemanticC
 import { enhanceSessionWithAI, evaluateRecall, explainConceptWithAI, type ExplanationVariant } from './ai'
 import { buildLocalStudySession, type RecallEvaluation, type StudySession } from './sessionGenerator'
 import { analyzeMaterialSemantically, buildLocalSemanticAnalysis, conceptsFromSemantic, normalizeSemanticAnalysis, sortConceptsByDocumentOrder } from './semantic'
-import { applyMemoryEvent, dueReviews, formatReviewDate, fragileConcepts, getMemoryRecords, loadLearningMemory, memoryLabel, memoryStatus, saveLearningMemory, solidConcepts, type LearningMemory, type MemoryEvent } from './memory'
+import { applyMemoryEvent, clearLearningMemoryCache, dueReviews, formatReviewDate, fragileConcepts, getMemoryRecords, loadLearningMemory, memoryLabel, memoryStatus, saveLearningMemory, solidConcepts, type LearningMemory, type MemoryEvent } from './memory'
 import DashboardView from './dashboardView'
 import { subjectFor } from './dashboard'
 import { useMicroAudio } from './microaudio'
 import { useAuth } from './auth'
-import { loadCloudState, mergeLearningMemory, mergeMaterials, saveCloudState, type SyncStatus } from './cloudSync'
+import { clearLocalMaterialCache, deleteCloudMaterial, hasCompletedCloudMigration, loadCloudState, loadLocalMaterialCache, migrateLocalStateToCloud, saveAllConceptProgress, saveCloudMaterial, saveCloudMaterials, saveCloudShellState, saveConceptProgress, saveLocalMaterialCache, uploadMaterialOriginal, type SyncStatus } from './cloudSync'
 import { clearAiClientCache, getCachedExplanation, getCachedExplanationEntry, getCachedSession, getCachedSessionEntry, type AiAttribution } from './aiClientCache'
 import ConceptLab from './labs/ConceptLab'
 import { availableLabs, getLabDefinition } from './labs/registry'
@@ -129,89 +129,176 @@ function App() {
   const [explainScore, setExplainScore] = useState<number | null>(null)
   const [blockerOpen, setBlockerOpen] = useState(false)
   const [selectedBlocker, setSelectedBlocker] = useState<Blocker | null>(null)
-  const [mastery, setMastery] = useState(() => Number(localStorage.getItem('comprende-mastery') || '18'))
+  const [mastery, setMastery] = useState(() => Number(localStorage.getItem(`comprende-mastery:${user.id}`) || localStorage.getItem('comprende-mastery') || '18'))
   const [completedSteps, setCompletedSteps] = useState<StepId[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem('comprende-steps') || '[]')
+      return JSON.parse(localStorage.getItem(`comprende-steps:${user.id}`) || localStorage.getItem('comprende-steps') || '[]')
     } catch {
       return []
     }
   })
   const speech = useMicroAudio()
-  const [materials, setMaterials] = useState<StudyMaterial[]>(() => {
-    try { return JSON.parse(localStorage.getItem('comprende-materials') || '[]') } catch { return [] }
-  })
+  const [materials, setMaterials] = useState<StudyMaterial[]>(() => loadLocalMaterialCache(user.id))
   const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null)
   const [activeConcept, setActiveConcept] = useState('')
-  const [learningMemory, setLearningMemory] = useState<LearningMemory>(() => loadLearningMemory())
+  const [learningMemory, setLearningMemory] = useState<LearningMemory>(() => loadLearningMemory(user.id))
 
   useEffect(() => {
     let cancelled = false
     setCloudHydrated(false)
     setSyncStatus('loading')
     setSyncError('')
+
+    const localMaterialsSnapshot = loadLocalMaterialCache(user.id)
+    const localMemorySnapshot = loadLearningMemory(user.id)
+
     loadCloudState(user.id).then(async cloud => {
       if (cancelled) return
-      const mergedMaterials = mergeMaterials(materials, cloud.materials)
-      const mergedMemory = mergeLearningMemory(learningMemory, cloud.progress?.learningMemory)
-      const mergedSteps = [...new Set([...(cloud.progress?.completedSteps || []), ...completedSteps])] as StepId[]
-      const mergedMastery = cloud.progress ? Math.max(mastery, cloud.progress.demoMastery) : mastery
-      setMaterials(mergedMaterials)
-      setLearningMemory(mergedMemory)
-      setCompletedSteps(mergedSteps)
-      setMastery(mergedMastery)
-      setCloudHydrated(true)
-      setSyncStatus('syncing')
-      try {
-        await saveCloudState(user.id, mergedMaterials, mergedMemory, mergedMastery, mergedSteps)
-        if (!cancelled) setSyncStatus('synced')
-      } catch (error) {
-        if (!cancelled) {
-          setSyncStatus('error')
-          setSyncError(error instanceof Error ? error.message : 'No pude sincronizar el estado inicial.')
-        }
+      let authoritative = cloud
+
+      // Migración única por dispositivo: rescata datos locales antiguos SIN borrar ni degradar
+      // lo que ya existe en Supabase. Después de esto, la nube manda siempre.
+      if (!hasCompletedCloudMigration(user.id) && (localMaterialsSnapshot.length || Object.keys(localMemorySnapshot.concepts).length)) {
+        setSyncStatus('syncing')
+        authoritative = await migrateLocalStateToCloud(user.id, localMaterialsSnapshot, localMemorySnapshot, cloud)
       }
+
+      const cloudMaterials = authoritative.materials || []
+      const cloudMemory = authoritative.progress?.learningMemory || { version: 1, concepts: {} } as LearningMemory
+      const cloudSteps = (authoritative.progress?.completedSteps || []) as StepId[]
+      const cloudMastery = authoritative.progress?.demoMastery ?? 18
+
+      if (cancelled) return
+      setMaterials(cloudMaterials)
+      setLearningMemory(cloudMemory)
+      setCompletedSteps(cloudSteps)
+      setMastery(cloudMastery)
+      saveLocalMaterialCache(user.id, cloudMaterials)
+      saveLearningMemory(cloudMemory, user.id)
+      localStorage.setItem(`comprende-mastery:${user.id}`, String(cloudMastery))
+      localStorage.setItem(`comprende-steps:${user.id}`, JSON.stringify(cloudSteps))
+      setCloudHydrated(true)
+      setSyncStatus('synced')
     }).catch(error => {
       if (cancelled) return
       setSyncStatus('error')
       setSyncError(error instanceof Error ? error.message : 'No pude cargar tus datos de Supabase.')
+      // Si la nube no está disponible, conservamos la caché local para no bloquear el estudio.
+      setMaterials(localMaterialsSnapshot)
+      setLearningMemory(localMemorySnapshot)
       setCloudHydrated(true)
     })
     return () => { cancelled = true }
-    // La hidratación debe ejecutarse al cambiar de usuario; el estado local se captura intencionalmente una vez.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id])
 
+  // Solo el estado de la demo original se guarda de forma global. El progreso real por concepto
+  // se persiste de manera granular en comprende_v1_concept_progress para evitar que un
+  // dispositivo antiguo sobrescriba todo el progreso de otro.
   useEffect(() => {
     if (!cloudHydrated) return
-    setSyncStatus('syncing')
     const timer = window.setTimeout(() => {
-      saveCloudState(user.id, materials, learningMemory, mastery, completedSteps).then(() => {
-        setSyncStatus('synced')
-        setSyncError('')
-      }).catch(error => {
+      saveCloudShellState(user.id, learningMemory, mastery, completedSteps).catch(error => {
         setSyncStatus('error')
-        setSyncError(error instanceof Error ? error.message : 'No pude sincronizar los cambios.')
+        setSyncError(error instanceof Error ? error.message : 'No pude guardar el estado general.')
       })
-    }, 850)
+    }, 900)
     return () => window.clearTimeout(timer)
-  }, [cloudHydrated, user.id, materials, learningMemory, mastery, completedSteps])
+  }, [cloudHydrated, user.id, mastery, completedSteps, learningMemory])
 
   useEffect(() => {
-    localStorage.setItem('comprende-mastery', String(mastery))
-    localStorage.setItem('comprende-steps', JSON.stringify(completedSteps))
-  }, [mastery, completedSteps])
+    localStorage.setItem(`comprende-mastery:${user.id}`, String(mastery))
+    localStorage.setItem(`comprende-steps:${user.id}`, JSON.stringify(completedSteps))
+  }, [user.id, mastery, completedSteps])
 
   useEffect(() => {
-    localStorage.setItem('comprende-materials', JSON.stringify(materials))
-  }, [materials])
+    saveLocalMaterialCache(user.id, materials)
+  }, [user.id, materials])
 
   useEffect(() => {
-    saveLearningMemory(learningMemory)
-  }, [learningMemory])
+    saveLearningMemory(learningMemory, user.id)
+  }, [user.id, learningMemory])
 
   const recordMemoryEvent = (event: MemoryEvent) => {
-    setLearningMemory(current => applyMemoryEvent(current, event))
+    setLearningMemory(current => {
+      const next = applyMemoryEvent(current, event)
+      const record = conceptRecord(next, event.materialId, event.concept)
+      if (record && cloudHydrated) {
+        setSyncStatus('syncing')
+        saveConceptProgress(user.id, record, event).then(() => {
+          setSyncStatus('synced')
+          setSyncError('')
+        }).catch(error => {
+          setSyncStatus('error')
+          setSyncError(error instanceof Error ? error.message : 'No pude guardar esta evidencia de aprendizaje.')
+        })
+      }
+      return next
+    })
+  }
+
+  const addMaterial = async (material: StudyMaterial, file: File) => {
+    setSyncStatus('syncing')
+    const updatedAt = new Date().toISOString()
+    let originalFilePath = material.originalFilePath
+    try {
+      originalFilePath = await uploadMaterialOriginal(user.id, material.id, file)
+    } catch (error) {
+      // El material procesado sigue siendo útil aunque Storage falle. Dejamos el error visible,
+      // pero no perdemos el análisis ya realizado.
+      setSyncError(`El contenido se guardará, pero no pude subir el archivo original: ${error instanceof Error ? error.message : 'error desconocido'}`)
+    }
+    const nextMaterial: StudyMaterial = {
+      ...material,
+      updatedAt,
+      originalFilePath,
+      originalFileSize: file.size,
+      originalMimeType: file.type || material.originalMimeType,
+    }
+    await saveCloudMaterial(user.id, nextMaterial)
+    setMaterials(current => [nextMaterial, ...current.filter(item => item.id !== nextMaterial.id)])
+    setSyncStatus('synced')
+    return nextMaterial
+  }
+
+  const updateMaterial = async (material: StudyMaterial) => {
+    const nextMaterial = { ...material, updatedAt: new Date().toISOString() }
+    setMaterials(current => current.map(item => item.id === nextMaterial.id ? nextMaterial : item))
+    setSyncStatus('syncing')
+    try {
+      await saveCloudMaterial(user.id, nextMaterial)
+      setSyncStatus('synced')
+      setSyncError('')
+    } catch (error) {
+      setSyncStatus('error')
+      setSyncError(error instanceof Error ? error.message : 'No pude guardar el material actualizado.')
+    }
+  }
+
+  const removeMaterial = async (material: StudyMaterial) => {
+    setSyncStatus('syncing')
+    try {
+      await deleteCloudMaterial(user.id, material)
+      setMaterials(current => current.filter(item => item.id !== material.id))
+      setLearningMemory(current => ({
+        ...current,
+        concepts: Object.fromEntries(Object.entries(current.concepts).filter(([, record]) => record.materialId !== material.id)),
+      }))
+      setSyncStatus('synced')
+      setSyncError('')
+    } catch (error) {
+      setSyncStatus('error')
+      setSyncError(error instanceof Error ? error.message : 'No pude eliminar el material de la nube.')
+    }
+  }
+
+  const importBackup = async (nextMaterials: StudyMaterial[], nextMemory: LearningMemory) => {
+    setSyncStatus('syncing')
+    const stamped = nextMaterials.map(material => ({ ...material, updatedAt: material.updatedAt || new Date().toISOString() }))
+    await saveCloudMaterials(user.id, stamped)
+    await saveAllConceptProgress(user.id, nextMemory)
+    setMaterials(stamped)
+    setLearningMemory(nextMemory)
+    setSyncStatus('synced')
   }
 
   const openTrackedConcept = (materialId: string, concept: string) => {
@@ -254,8 +341,10 @@ function App() {
   const handleSignOut = async () => {
     // La nube ya conserva el estado. Limpiamos datos privados del navegador para que
     // otro usuario en el mismo equipo no herede materiales/progreso ni caché pedagógico.
-    localStorage.removeItem('comprende-materials')
-    localStorage.removeItem('comprende-learning-memory-v1')
+    clearLocalMaterialCache(user.id)
+    clearLearningMemoryCache(user.id)
+    localStorage.removeItem(`comprende-mastery:${user.id}`)
+    localStorage.removeItem(`comprende-steps:${user.id}`)
     localStorage.removeItem('comprende-mastery')
     localStorage.removeItem('comprende-steps')
     localStorage.removeItem('comprende-learning-mode')
@@ -276,16 +365,21 @@ function App() {
     setBlockerOpen(false)
   }
 
+  if (!cloudHydrated && syncStatus === 'loading') {
+    return <div className="cloud-bootstrap-screen"><div className="cloud-bootstrap-card"><Cloud size={28} /><strong>Sincronizando tu biblioteca…</strong><span>Supabase es la fuente oficial. Estoy cargando materiales, progreso y lecciones completadas antes de mostrar datos.</span></div></div>
+  }
+
   return (
     <div className="app-shell">
       <Sidebar view={view} setView={setView} mastery={mastery} materialCount={materials.length} dueCount={dueReviews(learningMemory).length} />
       <main className="main-area">
         <Topbar view={view} setView={setView} email={user.email || ''} syncStatus={syncStatus} syncError={syncError} onSignOut={handleSignOut} />
-        {view === 'home' && <DashboardView materials={materials} learningMemory={learningMemory} onOpenConcept={openTrackedConcept} onOpenMap={(id) => { setActiveMaterialId(id); setView('material-map'); window.scrollTo({ top: 0 }) }} onOpenMaterials={() => setView('materials')} onOpenReviews={() => setView('practice')} onOpenProgress={() => setView('progress')} onImport={(nextMaterials, nextMemory) => { setMaterials(nextMaterials); setLearningMemory(nextMemory) }} onStartDemo={startSession} />}
+        {view === 'home' && <DashboardView materials={materials} learningMemory={learningMemory} onOpenConcept={openTrackedConcept} onOpenMap={(id) => { setActiveMaterialId(id); setView('material-map'); window.scrollTo({ top: 0 }) }} onOpenMaterials={() => setView('materials')} onOpenReviews={() => setView('practice')} onOpenProgress={() => setView('progress')} onImport={(nextMaterials, nextMemory) => { void importBackup(nextMaterials, nextMemory) }} onStartDemo={startSession} />}
         {view === 'materials' && (
           <MaterialsView
             materials={materials}
-            setMaterials={setMaterials}
+            onAddMaterial={addMaterial}
+            onDeleteMaterial={removeMaterial}
             learningMemory={learningMemory}
             onStudy={(id, concept) => { setActiveMaterialId(id); setActiveConcept(concept); setView('material-study'); window.scrollTo({ top: 0 }) }}
             onMap={(id) => { setActiveMaterialId(id); setView('material-map'); window.scrollTo({ top: 0 }) }}
@@ -297,7 +391,7 @@ function App() {
             learningMemory={learningMemory}
             onBack={() => setView('materials')}
             onStudy={(concept) => { setActiveConcept(concept); setView('material-study'); window.scrollTo({ top: 0 }) }}
-            onUpdate={(updated) => setMaterials(materials.map(m => m.id === updated.id ? updated : m))}
+            onUpdate={(updated) => { void updateMaterial(updated) }}
           />
         )}
         {view === 'material-study' && activeMaterialId && (
@@ -359,7 +453,7 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
         <div className="brand-mark">C</div>
         <div>
           <strong>Comprende</strong>
-          <span>VERSIÓN 2.0.6 · UNIVERSAL LEARNING ENGINE</span>
+          <span>VERSIÓN 2.0.7 · UNIVERSAL LEARNING ENGINE</span>
         </div>
       </div>
       <nav className="nav-list">
@@ -384,7 +478,7 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
         </button>
       </div>
       <div className="sidebar-footer sidebar-footer-v10">
-        <small>Comprende 2.0.6 · Supabase Sync</small>
+        <small>Comprende 2.0.7 · Supabase Sync</small>
         <button onClick={() => setView('session')}>Abrir demo de Bayes</button>
       </div>
     </aside>
@@ -392,11 +486,11 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
 }
 
 function Topbar({ view, setView, email, syncStatus, syncError, onSignOut }: { view: View; setView: (v: View) => void; email: string; syncStatus: SyncStatus; syncError: string; onSignOut: () => Promise<void> }) {
-  const syncLabel = syncStatus === 'loading' ? 'Cargando nube' : syncStatus === 'syncing' ? 'Sincronizando' : syncStatus === 'error' ? 'Error de sync' : 'Sincronizado'
+  const syncLabel = syncStatus === 'loading' ? 'Cargando nube' : syncStatus === 'syncing' ? 'Guardando…' : syncStatus === 'error' ? 'Error de nube' : 'Todo sincronizado'
   return (
     <header className="topbar">
       <div className="crumbs">
-        <span>Comprende 2.0.6</span>
+        <span>Comprende 2.0.7</span>
         {view === 'session' && <><ChevronRight size={14} /><strong>Teorema de Bayes</strong></>}
         {(view === 'materials' || view === 'material-study' || view === 'material-map') && <><ChevronRight size={14} /><strong>{view === 'materials' ? 'Materiales' : view === 'material-map' ? 'Mapa del documento' : 'Mesa de comprensión'}</strong></>}
         {view === 'practice' && <><ChevronRight size={14} /><strong>Repaso inteligente</strong></>}
@@ -717,7 +811,7 @@ function PracticeView({ setView, learningMemory, materials, onReview }: { setVie
 
   return <div className="page review-page">
     <section className="generic-hero review-hero">
-      <span className="tiny-label">COMPRENDE 2.0.6 · REPASO INTELIGENTE</span>
+      <span className="tiny-label">COMPRENDE 2.0.7 · REPASO INTELIGENTE</span>
       <h1>No repases todo. <span>Recupera lo que empieza a enfriarse.</span></h1>
       <p>Comprende programa el siguiente contacto usando lo que hiciste en práctica y en “Explícamelo tú”. Un fallo acorta el intervalo; una recuperación sólida lo alarga.</p>
     </section>
@@ -761,7 +855,7 @@ function ProgressView({ mastery, completedSteps, startSession, learningMemory, o
 
   return <div className="page memory-progress-page">
     <section className="generic-hero">
-      <span className="tiny-label">COMPRENDE 2.0.6 · MEMORIA Y DOMINIO</span>
+      <span className="tiny-label">COMPRENDE 2.0.7 · MEMORIA Y DOMINIO</span>
       <h1>Lo importante no es haberlo visto. <span>Es poder recuperarlo después.</span></h1>
       <p>Este tablero usa evidencia de práctica y active recall. El porcentaje ya no representa páginas abiertas, sino señales de que puedes usar y explicar el concepto.</p>
     </section>
@@ -795,13 +889,15 @@ function ProgressView({ mastery, completedSteps, startSession, learningMemory, o
 
 function MaterialsView({
   materials,
-  setMaterials,
+  onAddMaterial,
+  onDeleteMaterial,
   learningMemory,
   onStudy,
   onMap,
 }: {
   materials: StudyMaterial[]
-  setMaterials: (materials: StudyMaterial[]) => void
+  onAddMaterial: (material: StudyMaterial, file: File) => Promise<StudyMaterial>
+  onDeleteMaterial: (material: StudyMaterial) => Promise<void>
   learningMemory: LearningMemory
   onStudy: (id: string, concept: string) => void
   onMap: (id: string) => void
@@ -841,7 +937,7 @@ function MaterialsView({
         semantic,
         concepts: semanticConcepts.length ? semanticConcepts : raw.concepts,
       }
-      setMaterials([material, ...materials])
+      await onAddMaterial(material, file)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No pude procesar el archivo.')
     } finally {
@@ -902,7 +998,7 @@ function MaterialsView({
 
       <div className="materials-toolbar">
         <div>
-          <span className="tiny-label">BIBLIOTECA LOCAL</span>
+          <span className="tiny-label">BIBLIOTECA EN LA NUBE</span>
           <h3>{materials.length ? `${materials.length} material${materials.length === 1 ? '' : 'es'}` : 'Aún no hay materiales'}</h3>
         </div>
         {materials.length > 0 && (
@@ -936,7 +1032,7 @@ function MaterialsView({
                     <span>{material.kind.toUpperCase()} · {material.pages ? `${material.pages} páginas · ` : ''}{Math.round(material.text.length / 1000)}k caracteres</span>
                     <small className="material-subject-v10">Materia: {subjectFor(material)}</small>
                   </div>
-                  <button className="icon-button danger" title="Eliminar" onClick={() => setMaterials(materials.filter(m => m.id !== material.id))}><Trash2 size={15} /></button>
+                  <button className="icon-button danger" title="Eliminar" onClick={() => { void onDeleteMaterial(material) }}><Trash2 size={15} /></button>
                 </div>
 
                 <div className="semantic-summary-row">
@@ -1603,7 +1699,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       <section className="generated-study-header">
         <div>
           <div className="generated-meta-row">
-            <span className="tiny-label">COMPRENDE 2.0.6 · SESIÓN DE COMPRENSIÓN</span>
+            <span className="tiny-label">COMPRENDE 2.0.7 · SESIÓN DE COMPRENSIÓN</span>
             <span className={generationSource === 'ai' || explanationSource === 'ai' ? 'engine-badge ai' : 'engine-badge'}><Sparkles size={12} /> {generationSource === 'ai' ? 'Sesión IA' : explanationSource === 'ai' ? 'Explicación IA' : 'Motor local'}</span>
             {(enhancing || explaining) && <span className="engine-working">{explaining ? 'Consultando contenido guardado…' : 'Mejorando con IA…'}</span>}
           </div>

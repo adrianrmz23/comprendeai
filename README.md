@@ -170,3 +170,17 @@ Para documentos analizados con versiones anteriores, usa **Reanalizar mapa** una
 - La prueba final solo exige conexiones con temas anteriores que ya fueron completados.
 - En el primer tema nunca se pide relacionar la explicación con un concepto posterior.
 - No hace falta reanalizar un PDF para aplicar esta corrección: se resuelve en la capa de sesión/evaluación.
+
+
+## 2.0.7 — Cloud Source of Truth
+
+Supabase es ahora la fuente oficial de materiales y progreso entre dispositivos. El navegador conserva solo una caché local por usuario.
+
+Ejecuta `supabase/migrations/004_comprende_v1_cloud_source_of_truth.sql` después de 001–003. La migración añade:
+
+- bucket privado `comprende-v1-materials` para PDFs/TXT/MD originales;
+- `comprende_v1_concept_progress` para guardar progreso por concepto sin sobrescribir otros temas;
+- `comprende_v1_learning_events` como historial de evidencias;
+- metadatos de archivo original en `comprende_v1_user_materials`.
+
+La primera vez que cada dispositivo abra v2.0.7, Comprende rescata de forma segura los datos locales antiguos que sean más completos y los sube a Supabase **sin borrar datos remotos**. A partir de ahí, la nube manda.

@@ -48,6 +48,10 @@ export type MemoryEvent = {
 
 const STORAGE_KEY = 'comprende-learning-memory-v1'
 
+function storageKey(userId?: string) {
+  return userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY
+}
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 const keyFor = (materialId: string, concept: string) => `${materialId}::${concept.toLocaleLowerCase('es-MX')}`
 
@@ -55,9 +59,11 @@ export function emptyLearningMemory(): LearningMemory {
   return { version: 1, concepts: {} }
 }
 
-export function loadLearningMemory(): LearningMemory {
+export function loadLearningMemory(userId?: string): LearningMemory {
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') as LearningMemory | null
+    const scoped = userId ? localStorage.getItem(storageKey(userId)) : null
+    const raw = scoped || localStorage.getItem(STORAGE_KEY) || 'null'
+    const parsed = JSON.parse(raw) as LearningMemory | null
     if (!parsed || parsed.version !== 1 || !parsed.concepts) return emptyLearningMemory()
     return parsed
   } catch {
@@ -65,8 +71,13 @@ export function loadLearningMemory(): LearningMemory {
   }
 }
 
-export function saveLearningMemory(memory: LearningMemory) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(memory))
+export function saveLearningMemory(memory: LearningMemory, userId?: string) {
+  localStorage.setItem(storageKey(userId), JSON.stringify(memory))
+}
+
+export function clearLearningMemoryCache(userId?: string) {
+  localStorage.removeItem(storageKey(userId))
+  if (userId) localStorage.removeItem(STORAGE_KEY)
 }
 
 function evidenceWeight(type: MemoryEventType) {

@@ -61,7 +61,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (!hasSupabaseBrowserConfig() || !supabase) {
-    return <div className="auth-screen"><section className="auth-card auth-config-card"><div className="auth-brand-mark">C</div><span className="auth-kicker"><Cloud size={15} /> CONFIGURACIÓN NECESARIA</span><h1>Conecta Supabase Auth.</h1><p>Comprende 2.0.6 usa un usuario real para sincronizar materiales, mapas y progreso entre dispositivos.</p><div className="auth-env-list"><code>VITE_SUPABASE_URL=...</code><code>VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...</code></div><small>También acepto tus nombres actuales <b>NEXT_PUBLIC_SUPABASE_URL</b> y <b>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</b>. La <b>SUPABASE_SECRET_KEY</b> sigue siendo exclusivamente del servidor.</small></section></div>
+    return <div className="auth-screen"><section className="auth-card auth-config-card"><div className="auth-brand-mark">C</div><span className="auth-kicker"><Cloud size={15} /> CONFIGURACIÓN NECESARIA</span><h1>Conecta Supabase Auth.</h1><p>Comprende 2.0.7 usa un usuario real para sincronizar materiales, mapas y progreso entre dispositivos.</p><div className="auth-env-list"><code>VITE_SUPABASE_URL=...</code><code>VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...</code></div><small>También acepto tus nombres actuales <b>NEXT_PUBLIC_SUPABASE_URL</b> y <b>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</b>. La <b>SUPABASE_SECRET_KEY</b> sigue siendo exclusivamente del servidor.</small></section></div>
   }
 
   if (!session?.user || !value) {
