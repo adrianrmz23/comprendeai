@@ -100,7 +100,7 @@ export default function DashboardView({
     <div className="page dashboard-v10">
       <section className="dashboard-hero-v10">
         <div>
-          <div className="eyebrow"><Sparkles size={16} /> COMPRENDE 2.0.6 · TU SISTEMA DE ESTUDIO</div>
+          <div className="eyebrow"><Sparkles size={16} /> COMPRENDE 2.0.8 · TU SISTEMA DE ESTUDIO</div>
           <h1>Hoy no necesitas estudiar todo.<br /><span>Necesitas estudiar lo correcto.</span></h1>
           <p>Tu panel reúne documentos, mapa semántico, práctica, memoria y repaso. Comprende usa la evidencia de lo que realmente puedes recuperar, no solo el tiempo que pasaste leyendo.</p>
         </div>

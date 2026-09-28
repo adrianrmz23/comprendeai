@@ -1,4 +1,4 @@
-import { createStructuredResponse } from './_openai.js'
+import { createStructuredResponseWithMeta } from './_openai.js'
 import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
 const PROMPT_VERSION = 'concept-explanation-v1.4'
@@ -21,12 +21,14 @@ const explanationSchema = {
 type Variant = 'default' | 'simpler' | 'new-example' | 'deep'
 
 type Attribution = {
-  provider: 'openai'
+  provider: 'openai' | 'cheapinference'
   model: string
   promptVersion: string
   generatedAt: string
   depth: 'quick' | 'advanced'
   sourceKind: 'document-grounded-with-model-expansion'
+  fallbackFrom?: 'openai'
+  fallbackReason?: string
 }
 
 function variantInstruction(variant: Variant) {
@@ -97,21 +99,24 @@ FORMATO DE CADA CAMPO:
 
 Evita repetir la misma idea en varios campos.`
 
-    const explanation = await createStructuredResponse(prompt, safeVariant === 'deep' ? 'concept_explanation_advanced' : 'concept_explanation', explanationSchema, {
+    const routed = await createStructuredResponseWithMeta<any>(prompt, safeVariant === 'deep' ? 'concept_explanation_advanced' : 'concept_explanation', explanationSchema, {
       maxOutputTokens: safeVariant === 'deep' ? 2200 : 1600,
       model: modelId,
       systemPrompt: safeVariant === 'deep'
         ? 'Eres un tutor universitario senior de IA y ciencia de datos. Tu trabajo es rescatar conceptos que no hicieron clic: diagnosticas el bloqueo, conectas prerrequisitos, explicas mecanismos y transfieres la idea a otro contexto. Mantienes fidelidad estricta a la evidencia y marcas como ampliación cualquier conocimiento externo al documento.'
         : 'Eres un tutor universitario excepcionalmente claro. Explicas conceptos difíciles como en un pizarrón: primero una idea mental simple, luego un ejemplo, después la precisión. Tu prioridad es que el estudiante diga “ah, ya entendí”.',
     })
+    const explanation = routed.data
 
     const attribution: Attribution = {
-      provider: 'openai',
-      model: modelId,
+      provider: routed.meta.provider,
+      model: routed.meta.model,
       promptVersion: PROMPT_VERSION,
       generatedAt: new Date().toISOString(),
       depth,
       sourceKind: 'document-grounded-with-model-expansion',
+      ...(routed.meta.fallbackFrom ? { fallbackFrom: routed.meta.fallbackFrom } : {}),
+      ...(routed.meta.fallbackReason ? { fallbackReason: routed.meta.fallbackReason } : {}),
     }
     const payload = { explanation, attribution }
     await writeAiCache({
@@ -119,9 +124,9 @@ Evita repetir la misma idea en varios campos.`
       artifactKind: safeVariant === 'deep' ? 'concept_explanation_advanced' : 'concept_explanation',
       sourceHash,
       promptVersion: PROMPT_VERSION,
-      modelId,
+      modelId: `${routed.meta.provider}:${routed.meta.model}`,
       payload,
-      metadata: { concept, materialName: materialName || '', variant: safeVariant, provider: 'openai', depth },
+      metadata: { concept, materialName: materialName || '', variant: safeVariant, provider: routed.meta.provider, depth, fallbackReason: routed.meta.fallbackReason || '' },
     })
     return res.status(200).json({ ...payload, cached: false })
   } catch (error) {

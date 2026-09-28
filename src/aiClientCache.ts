@@ -11,6 +11,8 @@ export type AiAttribution = {
   generatedAt?: string
   depth?: 'quick' | 'advanced'
   sourceKind?: string
+  fallbackFrom?: string
+  fallbackReason?: string
 }
 
 type CacheShape = {

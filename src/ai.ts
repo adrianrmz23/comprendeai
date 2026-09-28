@@ -72,13 +72,16 @@ export async function explainConceptWithAI(
     return { explanation: explanation as StudySession['intuition'], source: 'ai', cached: Boolean(data?.cached), cacheLayer: data?.cached ? 'supabase' : undefined, attribution }
   } catch (error) {
     const detail = error instanceof Error ? error.message : ''
-    const missingKey = /OPENAI_API_KEY/i.test(detail)
+    const missingProviders = /OPENAI_API_KEY|CHEAPINFERENCE_API_KEY/i.test(detail)
+    const billingFailure = /credit_balance_exhausted|saldo de OpenAI agotado|insufficient_quota/i.test(detail)
     return {
       explanation: fallback,
       source: 'local',
-      message: missingKey
-        ? 'La explicación con IA está lista en el proyecto, pero falta configurar OPENAI_API_KEY.'
-        : 'No pude usar la IA en este momento. Dejé una explicación local para que puedas seguir estudiando.',
+      message: billingFailure
+        ? 'OpenAI se quedó sin saldo y el respaldo de CheaperInference tampoco pudo responder. Dejé una explicación local para que puedas seguir estudiando.'
+        : missingProviders
+          ? 'No hay un proveedor de IA disponible. Revisa OPENAI_API_KEY y CHEAPINFERENCE_API_KEY en Vercel.'
+          : 'No pude usar OpenAI ni CheaperInference en este momento. Dejé una explicación local para que puedas seguir estudiando.',
     }
   }
 }
@@ -104,17 +107,29 @@ export async function enhanceSessionWithAI(material: StudyMaterial, concept: str
       }),
     })
 
-    if (!response.ok) throw new Error(`AI unavailable (${response.status})`)
+    if (!response.ok) {
+      let detail = ''
+      try {
+        const payload = await response.json()
+        detail = typeof payload?.error === 'string' ? payload.error : ''
+      } catch {
+        detail = await response.text().catch(() => '')
+      }
+      throw new Error(detail || `AI unavailable (${response.status})`)
+    }
     const data = await response.json()
     if (!data?.session?.concept) throw new Error('Invalid AI response')
     const attribution = data?.attribution as AiAttribution | undefined
     setCachedSession(material, concept, data.session as StudySession, attribution)
     return { session: data.session as StudySession, source: 'ai', cached: Boolean(data?.cached), cacheLayer: data?.cached ? 'supabase' : undefined, attribution }
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : ''
     return {
       session: fallback,
       source: 'local',
-      message: 'La sesión base sigue disponible. Puedes usar IA específicamente en “Entender” o configurar OPENAI_API_KEY para regenerar la sesión completa.',
+      message: /credit_balance_exhausted|saldo de OpenAI agotado/i.test(detail)
+        ? 'OpenAI se quedó sin saldo y CheaperInference tampoco pudo generar la sesión. Mantengo la sesión local para que puedas seguir estudiando.'
+        : 'La sesión local sigue disponible porque los proveedores de IA no respondieron en este momento.',
     }
   }
 }

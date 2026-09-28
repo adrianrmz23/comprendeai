@@ -184,3 +184,18 @@ Ejecuta `supabase/migrations/004_comprende_v1_cloud_source_of_truth.sql` despué
 - metadatos de archivo original en `comprende_v1_user_materials`.
 
 La primera vez que cada dispositivo abra v2.0.7, Comprende rescata de forma segura los datos locales antiguos que sean más completos y los sube a Supabase **sin borrar datos remotos**. A partir de ahí, la nube manda.
+
+
+## 2.0.8 — Respaldo automático de IA
+
+Comprende usa OpenAI como proveedor principal para explicaciones, sesiones, evaluación y análisis estructurado. Si OpenAI falla por saldo agotado (`credit_balance_exhausted`), límites 429 o una indisponibilidad 5xx/red, el servidor cambia automáticamente a CheaperInference usando el modelo configurado en `CHEAPINFERENCE_MODEL` (por defecto `deepseek-v4-flash-0731`).
+
+Variables recomendadas en Vercel:
+
+```env
+CHEAPINFERENCE_API_KEY=ci_live_...
+CHEAPINFERENCE_BASE_URL=https://api.cheaperinference.com/v1
+CHEAPINFERENCE_MODEL=deepseek-v4-flash-0731
+```
+
+La interfaz conserva la procedencia: cuando entra el respaldo muestra **CheaperInference · modelo · respaldo automático**. Si ambos proveedores fallan, Comprende mantiene el respaldo local y muestra un mensaje explícito. No requiere migración SQL nueva.

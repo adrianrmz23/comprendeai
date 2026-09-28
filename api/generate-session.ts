@@ -1,4 +1,4 @@
-import { createStructuredResponse } from './_openai.js'
+import { createStructuredResponseWithMeta } from './_openai.js'
 import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
 const PROMPT_VERSION = 'study-session-v1.4'
@@ -158,18 +158,21 @@ OTRAS REGLAS:
 - teachBack debe exigir qué es, para qué sirve, una relación y un ejemplo NUEVO.
 - rescates cambian de estrategia según términos, fórmula, cuándo usarlo y prerrequisitos.`
 
-    const session = await createStructuredResponse(prompt, 'study_session_v8', sessionSchema, {
+    const routed = await createStructuredResponseWithMeta<any>(prompt, 'study_session_v8', sessionSchema, {
       maxOutputTokens: 5600,
       model: modelId,
       systemPrompt: 'Eres un tutor universitario de IA experto en aprendizaje activo. No examinas al estudiante por sorpresa: primero construyes comprensión, luego muestras casos reales, resuelves decisiones junto con él y finalmente aumentas la dificultad. Las definiciones formales se mantienen fieles a la evidencia; los ejemplos externos se presentan como escenarios pedagógicos, no como contenido del documento.',
     })
+    const session = routed.data
     const attribution = {
-      provider: 'openai',
-      model: modelId,
+      provider: routed.meta.provider,
+      model: routed.meta.model,
       promptVersion: PROMPT_VERSION,
       generatedAt: new Date().toISOString(),
       depth: 'quick',
       sourceKind: 'document-grounded-with-model-expansion',
+      ...(routed.meta.fallbackFrom ? { fallbackFrom: routed.meta.fallbackFrom } : {}),
+      ...(routed.meta.fallbackReason ? { fallbackReason: routed.meta.fallbackReason } : {}),
     }
     const payload = { session, attribution }
     await writeAiCache({
@@ -177,9 +180,9 @@ OTRAS REGLAS:
       artifactKind: 'study_session',
       sourceHash,
       promptVersion: PROMPT_VERSION,
-      modelId,
+      modelId: `${routed.meta.provider}:${routed.meta.model}`,
       payload,
-      metadata: { concept, materialName: materialName || '', provider: 'openai', depth: 'quick' },
+      metadata: { concept, materialName: materialName || '', provider: routed.meta.provider, depth: 'quick', fallbackReason: routed.meta.fallbackReason || '' },
     })
     return res.status(200).json({ ...payload, cached: false })
   } catch (error) {

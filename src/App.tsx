@@ -478,7 +478,7 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
         </button>
       </div>
       <div className="sidebar-footer sidebar-footer-v10">
-        <small>Comprende 2.0.7 · Supabase Sync</small>
+        <small>Comprende 2.0.8 · Supabase Sync</small>
         <button onClick={() => setView('session')}>Abrir demo de Bayes</button>
       </div>
     </aside>
@@ -490,7 +490,7 @@ function Topbar({ view, setView, email, syncStatus, syncError, onSignOut }: { vi
   return (
     <header className="topbar">
       <div className="crumbs">
-        <span>Comprende 2.0.7</span>
+        <span>Comprende 2.0.8</span>
         {view === 'session' && <><ChevronRight size={14} /><strong>Teorema de Bayes</strong></>}
         {(view === 'materials' || view === 'material-study' || view === 'material-map') && <><ChevronRight size={14} /><strong>{view === 'materials' ? 'Materiales' : view === 'material-map' ? 'Mapa del documento' : 'Mesa de comprensión'}</strong></>}
         {view === 'practice' && <><ChevronRight size={14} /><strong>Repaso inteligente</strong></>}
@@ -811,7 +811,7 @@ function PracticeView({ setView, learningMemory, materials, onReview }: { setVie
 
   return <div className="page review-page">
     <section className="generic-hero review-hero">
-      <span className="tiny-label">COMPRENDE 2.0.7 · REPASO INTELIGENTE</span>
+      <span className="tiny-label">COMPRENDE 2.0.8 · REPASO INTELIGENTE</span>
       <h1>No repases todo. <span>Recupera lo que empieza a enfriarse.</span></h1>
       <p>Comprende programa el siguiente contacto usando lo que hiciste en práctica y en “Explícamelo tú”. Un fallo acorta el intervalo; una recuperación sólida lo alarga.</p>
     </section>
@@ -855,7 +855,7 @@ function ProgressView({ mastery, completedSteps, startSession, learningMemory, o
 
   return <div className="page memory-progress-page">
     <section className="generic-hero">
-      <span className="tiny-label">COMPRENDE 2.0.7 · MEMORIA Y DOMINIO</span>
+      <span className="tiny-label">COMPRENDE 2.0.8 · MEMORIA Y DOMINIO</span>
       <h1>Lo importante no es haberlo visto. <span>Es poder recuperarlo después.</span></h1>
       <p>Este tablero usa evidencia de práctica y active recall. El porcentaje ya no representa páginas abiertas, sino señales de que puedes usar y explicar el concepto.</p>
     </section>
@@ -1577,7 +1577,8 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
   const semanticForStudy = normalizeSemanticAnalysis(material.semantic || buildLocalSemanticAnalysis(material))
   const semanticConcept = semanticForStudy.concepts.find(item => item.label.toLocaleLowerCase('es-MX') === concept.toLocaleLowerCase('es-MX'))
   const sourcePages = semanticConcept?.pages?.length ? semanticConcept.pages.join(', ') : ''
-  const attributionLabel = explanationAttribution?.provider === 'openai' ? 'OpenAI' : explanationAttribution?.provider || 'IA'
+  const providerLabel = (provider?: string) => provider === 'openai' ? 'OpenAI' : provider === 'cheapinference' ? 'CheaperInference' : provider || 'IA'
+  const attributionLabel = providerLabel(explanationAttribution?.provider)
   const modelLabel = explanationAttribution?.model || ''
   const semanticStudyConcept = semanticForStudy.concepts.find(item => item.label === concept)
   const currentDocumentIndex = semanticForStudy.learningOrder.indexOf(concept)
@@ -1699,7 +1700,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       <section className="generated-study-header">
         <div>
           <div className="generated-meta-row">
-            <span className="tiny-label">COMPRENDE 2.0.7 · SESIÓN DE COMPRENSIÓN</span>
+            <span className="tiny-label">COMPRENDE 2.0.8 · SESIÓN DE COMPRENSIÓN</span>
             <span className={generationSource === 'ai' || explanationSource === 'ai' ? 'engine-badge ai' : 'engine-badge'}><Sparkles size={12} /> {generationSource === 'ai' ? 'Sesión IA' : explanationSource === 'ai' ? 'Explicación IA' : 'Motor local'}</span>
             {(enhancing || explaining) && <span className="engine-working">{explaining ? 'Consultando contenido guardado…' : 'Mejorando con IA…'}</span>}
           </div>
@@ -1795,7 +1796,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
           <div className="document-context"><FileText size={15} /><div><strong>Cómo encaja en tu documento</strong><p>{session.intuition.context}</p></div></div>
           <div className="content-provenance">
             <div><FileText size={14} /><span><b>Fuente académica:</b> {material.name}{sourcePages ? ` · págs. ${sourcePages}` : ''}</span></div>
-            {explanationSource === 'ai' && explanationAttribution ? <div><Sparkles size={14} /><span><b>Explicación:</b> {attributionLabel} · {modelLabel}{explanationAttribution.depth === 'advanced' ? ' · modelo avanzado' : ' · explicación rápida'}{explanationAttribution.generatedAt ? ` · ${new Date(explanationAttribution.generatedAt).toLocaleDateString('es-MX')}` : ''}</span></div> : <div><BrainCircuit size={14} /><span><b>Explicación:</b> motor local de Comprende</span></div>}
+            {explanationSource === 'ai' && explanationAttribution ? <div><Sparkles size={14} /><span><b>Explicación:</b> {attributionLabel} · {modelLabel}{explanationAttribution.depth === 'advanced' ? ' · modelo avanzado' : ' · explicación rápida'}{explanationAttribution.fallbackFrom === 'openai' ? ' · respaldo automático' : ''}{explanationAttribution.generatedAt ? ` · ${new Date(explanationAttribution.generatedAt).toLocaleDateString('es-MX')}` : ''}</span></div> : <div><BrainCircuit size={14} /><span><b>Explicación:</b> motor local de Comprende</span></div>}
             <div className="provenance-note">Las definiciones se anclan al material. Los ejemplos o conexiones que no estén en el PDF se presentan como ampliación pedagógica de Comprende.</div>
           </div>
           <div className="microaudio-bar"><Headphones size={18} /><div><strong>Microaudio de comprensión · ElevenLabs</strong><span>{speech.loading ? 'Preparando la voz…' : speech.source === 'cache' ? 'Reutilizando el audio guardado en Supabase.' : speech.source === 'generated' ? 'Audio generado y guardado para la próxima vez.' : 'La primera reproducción se genera una vez y después se reutiliza.'}</span>{speech.error && <small className="audio-error-note">{speech.error}</small>}</div>{speech.playing ? <><button className="secondary-button" onClick={() => speech.paused ? speech.resume() : speech.pause()}>{speech.paused ? <Play size={13} /> : <Pause size={13} />} {speech.paused ? 'Seguir' : 'Pausa'}</button><button className="secondary-button" onClick={speech.stop}><Square size={13} /> Detener</button></> : <button className="secondary-button" disabled={speech.loading} onClick={() => speech.speak(audioText)}><Play size={13} /> {speech.loading ? 'Preparando…' : 'Escuchar'}</button>}</div>
@@ -1830,7 +1831,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
           <div className="workbench-kicker"><BookOpen size={17} /> {phase + 1} · AHORA SÍ, FORMAL</div>
           <h2>Vuelve a la precisión académica.</h2>
           <blockquote className="formal-definition">{session.formal.definition}</blockquote>
-          <div className="formal-provenance"><FileText size={13}/><span>Definición anclada a <b>{material.name}</b>{sourcePages ? ` · págs. ${sourcePages}` : ''}</span>{generationAttribution?.model && <><Sparkles size={13}/><span>Sesión organizada con <b>{generationAttribution.provider === 'openai' ? 'OpenAI' : generationAttribution.provider} · {generationAttribution.model}</b></span></>}</div>
+          <div className="formal-provenance"><FileText size={13}/><span>Definición anclada a <b>{material.name}</b>{sourcePages ? ` · págs. ${sourcePages}` : ''}</span>{generationAttribution?.model && <><Sparkles size={13}/><span>Sesión organizada con <b>{providerLabel(generationAttribution.provider)} · {generationAttribution.model}</b></span></>}</div>
           <div className="formal-grid">
             <div><span className="tiny-label">VOCABULARIO CLAVE</span><div className="term-list">{session.formal.terms.map(term => <div key={term.term}><strong>{term.term}</strong><p>{term.meaning}</p></div>)}</div></div>
             <div><span className="tiny-label">EVIDENCIA DE TU DOCUMENTO</span><div className="source-excerpts compact">{session.formal.sourceEvidence.map((excerpt, i) => <blockquote key={i}><span>Fuente {i + 1}</span><p>{excerpt}</p></blockquote>)}</div></div>
