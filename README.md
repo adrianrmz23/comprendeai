@@ -199,3 +199,12 @@ CHEAPINFERENCE_MODEL=deepseek-v4-flash-0731
 ```
 
 La interfaz conserva la procedencia: cuando entra el respaldo muestra **CheaperInference · modelo · respaldo automático**. Si ambos proveedores fallan, Comprende mantiene el respaldo local y muestra un mensaje explícito. No requiere migración SQL nueva.
+
+
+## 2.0.9 — ruta enfocada + examen final
+
+La sesión visible se simplifica a **Entender → Caso real → Laboratorio (si aplica) → Guiado → Práctica → Examen final**. Los pasos separados “Problema” y “Formal” dejan de aparecer porque su contenido útil se integra en casos, práctica y evaluación. “Explícamelo tú” se sustituye por un examen final de opción múltiple.
+
+El examen final usa 6 preguntas cuando la sesión viene de IA y evalúa concepto, aplicación, interpretación, error común y transferencia. Si el documento contiene una fórmula central, puede incluir 1–2 preguntas de fórmula; si no existe evidencia de fórmula, no la inventa. Las sesiones antiguas guardadas siguen funcionando mediante un examen local de compatibilidad construido a partir del caso real y la práctica existente.
+
+La lección se marca como completada al alcanzar **70%** en el examen final. El resultado se guarda como evento `exam` en la memoria por concepto y se sincroniza mediante la infraestructura de progreso existente; no requiere migración SQL nueva.

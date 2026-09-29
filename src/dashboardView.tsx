@@ -100,7 +100,7 @@ export default function DashboardView({
     <div className="page dashboard-v10">
       <section className="dashboard-hero-v10">
         <div>
-          <div className="eyebrow"><Sparkles size={16} /> COMPRENDE 2.0.8 · TU SISTEMA DE ESTUDIO</div>
+          <div className="eyebrow"><Sparkles size={16} /> COMPRENDE 2.0.9 · TU SISTEMA DE ESTUDIO</div>
           <h1>Hoy no necesitas estudiar todo.<br /><span>Necesitas estudiar lo correcto.</span></h1>
           <p>Tu panel reúne documentos, mapa semántico, práctica, memoria y repaso. Comprende usa la evidencia de lo que realmente puedes recuperar, no solo el tiempo que pasaste leyendo.</p>
         </div>
@@ -183,15 +183,15 @@ export default function DashboardView({
           {recent.length ? <div className="recent-list-v10">{recent.map(record => (
             <button key={record.id} onClick={() => onOpenConcept(record.materialId, record.concept)}>
               <div className="recent-score-v10">{record.mastery}%</div>
-              <div><strong>{record.concept}</strong><span>{record.materialName}</span><small>{new Date(record.lastReviewedAt).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} · {record.lastEvent === 'teachback' ? 'Explicación' : record.lastEvent === 'practice' ? 'Práctica' : record.lastEvent === 'lab' ? 'Laboratorio' : 'Repaso'}</small></div>
+              <div><strong>{record.concept}</strong><span>{record.materialName}</span><small>{new Date(record.lastReviewedAt).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} · {record.lastEvent === 'exam' ? 'Examen final' : record.lastEvent === 'teachback' ? 'Explicación' : record.lastEvent === 'practice' ? 'Práctica' : record.lastEvent === 'lab' ? 'Laboratorio' : 'Repaso'}</small></div>
               <ArrowRight size={14} />
             </button>
-          ))}</div> : <div className="dashboard-empty-v10 compact"><BrainCircuit size={25} /><p>La actividad aparece cuando completas práctica o “Explícamelo tú”.</p></div>}
+          ))}</div> : <div className="dashboard-empty-v10 compact"><BrainCircuit size={25} /><p>La actividad aparece cuando completas práctica, laboratorio o examen final.</p></div>}
         </div>
       </section>
 
       <section className="portable-data-v10">
-        <div className="portable-copy-v10"><div className="portable-icon-v10"><CheckCircle2 size={20} /></div><div><span className="tiny-label">TUS DATOS SON PORTÁTILES</span><h3>Respalda Comprende antes de cambiar de navegador o equipo</h3><p>Esta versión sigue siendo local-first. El respaldo incluye materiales procesados, mapas semánticos y memoria de aprendizaje en un solo archivo JSON.</p>{importMessage && <strong className="import-message-v10">{importMessage}</strong>}</div></div>
+        <div className="portable-copy-v10"><div className="portable-icon-v10"><CheckCircle2 size={20} /></div><div><span className="tiny-label">TUS DATOS SON PORTÁTILES</span><h3>Respalda Comprende antes de cambiar de navegador o equipo</h3><p>Supabase es la fuente oficial entre dispositivos. Este respaldo manual sigue disponible como copia adicional de materiales procesados, mapas semánticos y memoria de aprendizaje.</p>{importMessage && <strong className="import-message-v10">{importMessage}</strong>}</div></div>
         <div className="portable-actions-v10"><button className="secondary-button" onClick={exportData}><Download size={15} /> Exportar respaldo</button><button className="secondary-button" onClick={() => importRef.current?.click()}><Import size={15} /> Restaurar</button><input ref={importRef} type="file" accept="application/json,.json" hidden onChange={e => importData(e.target.files?.[0])} /></div>
       </section>
     </div>

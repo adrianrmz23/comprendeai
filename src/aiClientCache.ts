@@ -3,6 +3,7 @@ import type { StudySession } from './sessionGenerator'
 
 const KEY = 'comprende-ai-client-cache-v2'
 const LEGACY_KEY = 'comprende-ai-client-cache-v1'
+const SESSION_SCHEMA_VERSION = '2.0.9-final-exam'
 
 export type AiAttribution = {
   provider: string
@@ -51,7 +52,7 @@ function explanationKey(material: StudyMaterial, concept: string, variant: strin
 }
 
 function sessionKey(material: StudyMaterial, concept: string) {
-  return `${materialKey(material)}::session::${normalizeConcept(concept)}`
+  return `${materialKey(material)}::session::${SESSION_SCHEMA_VERSION}::${normalizeConcept(concept)}`
 }
 
 export function getCachedExplanationEntry(material: StudyMaterial, concept: string, variant = 'default') {

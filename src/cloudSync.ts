@@ -30,6 +30,7 @@ function memoryRichness(record: ConceptMemory | undefined) {
     (record.attempts || 0) * 100 +
     (record.completionCount || 0) * 75 +
     (record.completedAt ? 50 : 0) +
+    (record.finalExamScore != null ? 30 : 0) +
     (record.teachBackScore != null ? 25 : 0) +
     (record.practiceAccuracy != null ? 20 : 0) +
     record.mastery

@@ -1,4 +1,4 @@
-export type MemoryEventType = 'practice' | 'teachback' | 'manual' | 'prerequisite' | 'lab'
+export type MemoryEventType = 'practice' | 'teachback' | 'exam' | 'manual' | 'prerequisite' | 'lab'
 
 export type MemoryHistoryItem = {
   at: string
@@ -15,6 +15,7 @@ export type ConceptMemory = {
   mastery: number
   practiceAccuracy: number | null
   teachBackScore: number | null
+  finalExamScore?: number | null
   attempts: number
   streak: number
   lapses: number
@@ -42,6 +43,7 @@ export type MemoryEvent = {
   score: number
   practiceAccuracy?: number
   teachBackScore?: number
+  finalExamScore?: number
   detail?: string
   completed?: boolean
 }
@@ -81,6 +83,7 @@ export function clearLearningMemoryCache(userId?: string) {
 }
 
 function evidenceWeight(type: MemoryEventType) {
+  if (type === 'exam') return 0.46
   if (type === 'teachback') return 0.42
   if (type === 'practice') return 0.34
   if (type === 'lab') return 0.38
@@ -106,7 +109,7 @@ export function applyMemoryEvent(memory: LearningMemory, event: MemoryEvent): Le
   let mastery = Math.round(previousMastery * (1 - weight) + score * weight)
 
   // A failed retrieval should matter more than a passive/manual signal.
-  if ((event.type === 'teachback' || event.type === 'practice' || event.type === 'lab') && score < 50) mastery = Math.max(15, mastery - 8)
+  if ((event.type === 'teachback' || event.type === 'exam' || event.type === 'practice' || event.type === 'lab') && score < 50) mastery = Math.max(15, mastery - 8)
   if (score >= 90 && previous?.mastery && previous.mastery >= 80) mastery = Math.min(100, mastery + 3)
 
   const intervalDays = nextInterval(previous, score)
@@ -122,6 +125,7 @@ export function applyMemoryEvent(memory: LearningMemory, event: MemoryEvent): Le
     mastery,
     practiceAccuracy: event.practiceAccuracy ?? previous?.practiceAccuracy ?? null,
     teachBackScore: event.teachBackScore ?? previous?.teachBackScore ?? null,
+    finalExamScore: event.finalExamScore ?? previous?.finalExamScore ?? null,
     attempts: (previous?.attempts || 0) + 1,
     streak: passed ? (previous?.streak || 0) + 1 : 0,
     lapses: (previous?.lapses || 0) + (passed ? 0 : 1),
@@ -192,9 +196,9 @@ export function memoryLabel(record: ConceptMemory) {
 }
 
 export function conceptIsCompleted(record: ConceptMemory | undefined) {
-  return Boolean(record?.completedAt || typeof record?.teachBackScore === 'number')
+  return Boolean(record?.completedAt || (typeof record?.finalExamScore === 'number' && record.finalExamScore >= 70) || typeof record?.teachBackScore === 'number')
 }
 
 export function conceptCompletionScore(record: ConceptMemory | undefined) {
-  return record?.completionScore ?? record?.teachBackScore ?? record?.mastery ?? 0
+  return record?.completionScore ?? record?.finalExamScore ?? record?.teachBackScore ?? record?.mastery ?? 0
 }

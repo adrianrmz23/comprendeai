@@ -38,13 +38,13 @@ import {
 } from 'lucide-react'
 
 type View = 'home' | 'session' | 'practice' | 'progress' | 'materials' | 'material-map' | 'material-study'
-type StepId = 'problem' | 'intuition' | 'visual' | 'formal' | 'lab' | 'guided' | 'solo' | 'explain'
+type StepId = 'problem' | 'intuition' | 'visual' | 'formal' | 'lab' | 'guided' | 'solo' | 'explain' | 'exam'
 type Blocker = 'terms' | 'formula' | 'use' | 'prereq'
 type LearningMode = 'explain-first' | 'challenge-first'
 
 import { findRelevantExcerpts, readStudyFile, type StudyMaterial, type SemanticConcept } from './materials'
-import { enhanceSessionWithAI, evaluateRecall, explainConceptWithAI, type ExplanationVariant } from './ai'
-import { buildLocalStudySession, type RecallEvaluation, type StudySession } from './sessionGenerator'
+import { enhanceSessionWithAI, explainConceptWithAI, type ExplanationVariant } from './ai'
+import { buildLocalStudySession, getFinalExam, type StudySession } from './sessionGenerator'
 import { analyzeMaterialSemantically, buildLocalSemanticAnalysis, conceptsFromSemantic, normalizeSemanticAnalysis, sortConceptsByDocumentOrder } from './semantic'
 import { applyMemoryEvent, clearLearningMemoryCache, dueReviews, formatReviewDate, fragileConcepts, getMemoryRecords, loadLearningMemory, memoryLabel, memoryStatus, saveLearningMemory, solidConcepts, type LearningMemory, type MemoryEvent } from './memory'
 import DashboardView from './dashboardView'
@@ -108,11 +108,11 @@ function conceptRecord(memory: LearningMemory, materialId: string, concept: stri
 }
 
 function lessonIsCompleted(record: ReturnType<typeof conceptRecord>) {
-  return Boolean(record?.completedAt || typeof record?.teachBackScore === 'number')
+  return Boolean(record?.completedAt || (typeof record?.finalExamScore === 'number' && record.finalExamScore >= 70) || typeof record?.teachBackScore === 'number')
 }
 
 function lessonCompletionScore(record: ReturnType<typeof conceptRecord>) {
-  return record?.completionScore ?? record?.teachBackScore ?? record?.mastery ?? 0
+  return record?.completionScore ?? record?.finalExamScore ?? record?.teachBackScore ?? record?.mastery ?? 0
 }
 
 function App() {
@@ -453,7 +453,7 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
         <div className="brand-mark">C</div>
         <div>
           <strong>Comprende</strong>
-          <span>VERSIÓN 2.0.7 · UNIVERSAL LEARNING ENGINE</span>
+          <span>VERSIÓN 2.0.9 · UNIVERSAL LEARNING ENGINE</span>
         </div>
       </div>
       <nav className="nav-list">
@@ -478,7 +478,7 @@ function Sidebar({ view, setView, mastery, materialCount, dueCount }: { view: Vi
         </button>
       </div>
       <div className="sidebar-footer sidebar-footer-v10">
-        <small>Comprende 2.0.8 · Supabase Sync</small>
+        <small>Comprende 2.0.9 · Supabase Sync</small>
         <button onClick={() => setView('session')}>Abrir demo de Bayes</button>
       </div>
     </aside>
@@ -490,7 +490,7 @@ function Topbar({ view, setView, email, syncStatus, syncError, onSignOut }: { vi
   return (
     <header className="topbar">
       <div className="crumbs">
-        <span>Comprende 2.0.8</span>
+        <span>Comprende 2.0.9</span>
         {view === 'session' && <><ChevronRight size={14} /><strong>Teorema de Bayes</strong></>}
         {(view === 'materials' || view === 'material-study' || view === 'material-map') && <><ChevronRight size={14} /><strong>{view === 'materials' ? 'Materiales' : view === 'material-map' ? 'Mapa del documento' : 'Mesa de comprensión'}</strong></>}
         {view === 'practice' && <><ChevronRight size={14} /><strong>Repaso inteligente</strong></>}
@@ -811,9 +811,9 @@ function PracticeView({ setView, learningMemory, materials, onReview }: { setVie
 
   return <div className="page review-page">
     <section className="generic-hero review-hero">
-      <span className="tiny-label">COMPRENDE 2.0.8 · REPASO INTELIGENTE</span>
+      <span className="tiny-label">COMPRENDE 2.0.9 · REPASO INTELIGENTE</span>
       <h1>No repases todo. <span>Recupera lo que empieza a enfriarse.</span></h1>
-      <p>Comprende programa el siguiente contacto usando lo que hiciste en práctica y en “Explícamelo tú”. Un fallo acorta el intervalo; una recuperación sólida lo alarga.</p>
+      <p>Comprende programa el siguiente contacto usando lo que hiciste en práctica y en el examen final. Un fallo acorta el intervalo; una recuperación sólida lo alarga.</p>
     </section>
 
     <div className="review-summary-grid">
@@ -838,7 +838,7 @@ function PracticeView({ setView, learningMemory, materials, onReview }: { setVie
     <section className="memory-method-section">
       <div className="section-heading"><div><span className="tiny-label">CÓMO DECIDE COMPRENDE</span><h2>Menos repetición, más recuperación</h2></div></div>
       <div className="memory-method-grid">
-        <div><span>1</span><strong>Observa evidencia</strong><p>Registra aciertos en práctica y la calidad de tu explicación con tus palabras.</p></div>
+        <div><span>1</span><strong>Observa evidencia</strong><p>Registra aciertos en práctica y el resultado de tu examen final.</p></div>
         <div><span>2</span><strong>Ajusta el intervalo</strong><p>Si fallas, el concepto vuelve pronto. Si lo recuperas bien varias veces, espera más días.</p></div>
         <div><span>3</span><strong>Prioriza fragilidad</strong><p>Un concepto con bajo dominio o lapsos repetidos aparece antes aunque ya lo hayas “completado”.</p></div>
       </div>
@@ -855,9 +855,9 @@ function ProgressView({ mastery, completedSteps, startSession, learningMemory, o
 
   return <div className="page memory-progress-page">
     <section className="generic-hero">
-      <span className="tiny-label">COMPRENDE 2.0.8 · MEMORIA Y DOMINIO</span>
+      <span className="tiny-label">COMPRENDE 2.0.9 · MEMORIA Y DOMINIO</span>
       <h1>Lo importante no es haberlo visto. <span>Es poder recuperarlo después.</span></h1>
-      <p>Este tablero usa evidencia de práctica y active recall. El porcentaje ya no representa páginas abiertas, sino señales de que puedes usar y explicar el concepto.</p>
+      <p>Este tablero usa evidencia de práctica y del examen final. El porcentaje ya no representa páginas abiertas, sino señales de que puedes usar e interpretar el concepto.</p>
     </section>
 
     <div className="memory-dashboard-grid">
@@ -872,14 +872,14 @@ function ProgressView({ mastery, completedSteps, startSession, learningMemory, o
       {records.length ? <div className="memory-concept-list">{records.map(record => {
         const status = memoryStatus(record)
         const accuracy = record.practiceAccuracy == null ? '—' : `${Math.round(record.practiceAccuracy * 100)}%`
-        const recall = record.teachBackScore == null ? '—' : `${record.teachBackScore}%`
+        const recall = record.finalExamScore != null ? `${record.finalExamScore}%` : record.teachBackScore == null ? '—' : `${record.teachBackScore}%`
         return <article key={record.id}>
           <div className="memory-concept-head"><div><strong>{record.concept}</strong><span>{record.materialName}</span></div><span className={`memory-status ${status}`}>{memoryLabel(record)}</span></div>
           <div className="memory-bar"><span style={{ width: `${record.mastery}%` }} /></div>
-          <div className="memory-metrics"><span><b>{record.mastery}%</b> dominio</span><span><b>{accuracy}</b> práctica</span><span><b>{recall}</b> explicación</span><span><b>{record.attempts}</b> evidencias</span><span><b>{record.streak}</b> racha</span></div>
+          <div className="memory-metrics"><span><b>{record.mastery}%</b> dominio</span><span><b>{accuracy}</b> práctica</span><span><b>{recall}</b> examen final</span><span><b>{record.attempts}</b> evidencias</span><span><b>{record.streak}</b> racha</span></div>
           <div className="memory-card-footer"><span>Siguiente repaso: <b>{formatReviewDate(record.nextReviewAt)}</b> · intervalo {record.intervalDays} día{record.intervalDays === 1 ? '' : 's'}</span><button className="text-button" onClick={() => onReview(record.materialId, record.concept)}>{status === 'due' ? 'Repasar ahora' : 'Abrir concepto'} <ArrowRight size={13} /></button></div>
         </article>
-      })}</div> : <div className="review-empty"><Gauge size={28} /><h3>Tu tablero se llenará con evidencia, no con clics.</h3><p>Entra a cualquier concepto de tus materiales, completa la práctica adaptativa o “Explícamelo tú” y volverás aquí con una medición real.</p></div>}
+      })}</div> : <div className="review-empty"><Gauge size={28} /><h3>Tu tablero se llenará con evidencia, no con clics.</h3><p>Entra a cualquier concepto de tus materiales, completa la práctica adaptativa o el examen final y volverás aquí con una medición real.</p></div>}
     </section>
 
     <section className="legacy-memory-card"><div><span className="tiny-label">DEMO ORIGINAL DE BAYES</span><h3>{mastery}% de recorrido guardado</h3><p>Conservo el avance de la sesión inicial para no romper tus pruebas anteriores. A partir de tus PDFs, el sistema nuevo usa memoria por concepto.</p></div><button className="secondary-button" onClick={startSession}>Abrir demo <ArrowRight size={14} /></button></section>
@@ -1366,41 +1366,24 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
   const [soloIndex, setSoloIndex] = useState(1)
   const [soloAnswers, setSoloAnswers] = useState<Record<string, number>>({})
   const [soloFinished, setSoloFinished] = useState(false)
-  const [teachBack, setTeachBack] = useState('')
-  const [evaluation, setEvaluation] = useState<RecallEvaluation | null>(null)
-  const [evaluationSource, setEvaluationSource] = useState<'local' | 'ai'>('local')
-  const [evaluating, setEvaluating] = useState(false)
+  const [examAnswers, setExamAnswers] = useState<Record<string, number>>({})
+  const [examSubmitted, setExamSubmitted] = useState(false)
   const [rescue, setRescue] = useState<keyof StudySession['rescue'] | null>(null)
   const [prereqGateDismissed, setPrereqGateDismissed] = useState(false)
-  const [learningMode, setLearningMode] = useState<LearningMode>(() =>
-    localStorage.getItem('comprende-learning-mode') === 'challenge-first' ? 'challenge-first' : 'explain-first'
-  )
+  const learningMode: LearningMode = 'explain-first'
   const speech = useMicroAudio()
   const semanticForLab = material ? normalizeSemanticAnalysis(material.semantic || buildLocalSemanticAnalysis(material)) : null
   const conceptForLab = semanticForLab?.concepts.find(item => item.label === concept)
   const labDefinition = getLabDefinition(concept, conceptForLab?.lab)
 
-  const phaseConfigs: { id: StepId; label: string }[] = learningMode === 'explain-first'
-    ? [
-        { id: 'intuition', label: 'Entender' },
-        { id: 'visual', label: 'Caso real' },
-        { id: 'problem', label: 'Problema' },
-        { id: 'formal', label: 'Formal' },
-        ...(labDefinition ? [{ id: 'lab' as StepId, label: 'Laboratorio' }] : []),
-        { id: 'guided', label: 'Guiado' },
-        { id: 'solo', label: 'Practica' },
-        { id: 'explain', label: 'Explícalo' },
-      ]
-    : [
-        { id: 'problem', label: 'Problema' },
-        { id: 'intuition', label: 'Entender' },
-        { id: 'visual', label: 'Caso real' },
-        { id: 'formal', label: 'Formal' },
-        ...(labDefinition ? [{ id: 'lab' as StepId, label: 'Laboratorio' }] : []),
-        { id: 'guided', label: 'Guiado' },
-        { id: 'solo', label: 'Practica' },
-        { id: 'explain', label: 'Explícalo' },
-      ]
+  const phaseConfigs: { id: StepId; label: string }[] = [
+    { id: 'intuition', label: 'Entender' },
+    { id: 'visual', label: 'Caso real' },
+    ...(labDefinition ? [{ id: 'lab' as StepId, label: 'Laboratorio' }] : []),
+    { id: 'guided', label: 'Guiado' },
+    { id: 'solo', label: 'Práctica' },
+    { id: 'exam', label: 'Examen final' },
+  ]
   const currentPhase = phaseConfigs[phase]?.id ?? phaseConfigs[0].id
 
   const resetInteraction = () => {
@@ -1412,18 +1395,10 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
     setSoloIndex(session?.solo.startIndex ?? 1)
     setSoloAnswers({})
     setSoloFinished(false)
-    setTeachBack('')
-    setEvaluation(null)
+    setExamAnswers({})
+    setExamSubmitted(false)
     setRescue(null)
     speech.stop()
-  }
-
-  const changeLearningMode = (mode: LearningMode) => {
-    if (mode === learningMode) return
-    setLearningMode(mode)
-    localStorage.setItem('comprende-learning-mode', mode)
-    resetInteraction()
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const applyAIExplanation = async (targetConcept: string, variant: ExplanationVariant = 'default') => {
@@ -1598,53 +1573,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
   const orderedStudyConcepts = currentDeepConcept ? [currentDeepConcept, ...routeConcepts] : routeConcepts
   const hasPrerequisites = Boolean(semanticStudyConcept?.prerequisites?.length)
 
-  const previousDocumentConcepts = currentDocumentIndex > 0
-    ? semanticForStudy.learningOrder.slice(0, currentDocumentIndex)
-    : []
-  const completedPreviousConcepts = previousDocumentConcepts.filter(label =>
-    lessonIsCompleted(conceptRecord(learningMemory, material.id, label)),
-  )
-  const connectionTarget = completedPreviousConcepts.at(-1) || ''
-  const effectiveTeachBack: StudySession['teachBack'] = connectionTarget
-    ? {
-        prompt: `Explícame ${concept} como si yo fuera un compañero que faltó a clase. Incluye qué es, para qué sirve, cómo se relaciona con ${connectionTarget} —que ya estudiaste— y un ejemplo del mundo real distinto al que acabas de practicar. No necesitas usar conceptos posteriores del documento.`,
-        checklist: [
-          `Definiste ${concept} con tus palabras.`,
-          'Explicaste para qué sirve o qué problema aborda.',
-          `Lo relacionaste con ${connectionTarget}, que ya habías estudiado.`,
-          'Incluiste un ejemplo nuevo o una consecuencia práctica.',
-        ],
-      }
-    : {
-        prompt: `Explícame ${concept} como si yo fuera un compañero que faltó a clase. Incluye qué es, para qué sirve y un ejemplo del mundo real distinto al que acabas de practicar. Como todavía no has completado un tema anterior de esta ruta, no necesitas relacionarlo con conceptos que aparecen después en el documento.`,
-        checklist: [
-          `Definiste ${concept} con tus palabras.`,
-          'Explicaste para qué sirve o qué problema aborda.',
-          'Describiste la idea sin apoyarte en un tema que todavía no has estudiado.',
-          'Incluiste un ejemplo nuevo o una consecuencia práctica.',
-        ],
-      }
-
   const audioText = `${session.concept}. ${session.intuition.summary} ${session.intuition.purpose} Ejemplo: ${session.intuition.example} ${session.intuition.analogy} ${session.intuition.keyIdea}`
-  const evaluate = async () => {
-    if (!teachBack.trim()) return
-    setEvaluating(true)
-    const sessionForEvaluation: StudySession = { ...session, teachBack: effectiveTeachBack }
-    const result = await evaluateRecall(teachBack, material, concept, sessionForEvaluation)
-    setEvaluation(result.evaluation)
-    setEvaluationSource(result.source)
-    onMemoryEvent({
-      materialId: material.id,
-      materialName: material.name,
-      concept,
-      type: 'teachback',
-      score: result.evaluation.score,
-      teachBackScore: result.evaluation.score,
-      detail: result.evaluation.verdict,
-      completed: true,
-    })
-    setEvaluating(false)
-  }
 
   const rescueLabels: { id: keyof StudySession['rescue']; label: string }[] = [
     { id: 'terms', label: 'No entiendo los términos' },
@@ -1659,6 +1588,32 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
   const soloAnsweredEntries = session.solo.exercises.filter(exercise => soloAnswers[exercise.id] !== undefined)
   const soloCorrectCount = soloAnsweredEntries.filter(exercise => soloAnswers[exercise.id] === exercise.correctIndex).length
   const currentMemory = conceptRecord(learningMemory, material.id, concept)
+  const finalExam = getFinalExam(session)
+  const examAnsweredCount = finalExam.questions.filter(question => examAnswers[question.id] !== undefined).length
+  const examCorrectCount = finalExam.questions.filter(question => examAnswers[question.id] === question.correctIndex).length
+  const examScore = finalExam.questions.length ? Math.round((examCorrectCount / finalExam.questions.length) * 100) : 0
+  const examPassed = examSubmitted && examScore >= finalExam.passScore
+
+  const submitFinalExam = () => {
+    if (examSubmitted || examAnsweredCount !== finalExam.questions.length) return
+    setExamSubmitted(true)
+    onMemoryEvent({
+      materialId: material.id,
+      materialName: material.name,
+      concept,
+      type: 'exam',
+      score: examScore,
+      finalExamScore: examScore,
+      detail: `${examCorrectCount}/${finalExam.questions.length} respuestas correctas en examen final`,
+      completed: examScore >= finalExam.passScore,
+    })
+  }
+
+  const retryFinalExam = () => {
+    setExamAnswers({})
+    setExamSubmitted(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const goNextSoloExercise = () => {
     if (!currentSoloExercise || currentSoloAnswer === undefined) return
@@ -1700,13 +1655,13 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       <section className="generated-study-header">
         <div>
           <div className="generated-meta-row">
-            <span className="tiny-label">COMPRENDE 2.0.8 · SESIÓN DE COMPRENSIÓN</span>
+            <span className="tiny-label">COMPRENDE 2.0.9 · SESIÓN DE COMPRENSIÓN</span>
             <span className={generationSource === 'ai' || explanationSource === 'ai' ? 'engine-badge ai' : 'engine-badge'}><Sparkles size={12} /> {generationSource === 'ai' ? 'Sesión IA' : explanationSource === 'ai' ? 'Explicación IA' : 'Motor local'}</span>
             {(enhancing || explaining) && <span className="engine-working">{explaining ? 'Consultando contenido guardado…' : 'Mejorando con IA…'}</span>}
           </div>
           <h1>{concept}</h1>
           <p>{session.objective}</p>
-          <div className="session-facts"><span>≈ {session.estimatedMinutes} min</span><span>{material.name}</span>{currentDocumentIndex >= 0 && <span>Tema {currentDocumentIndex + 1} de {semanticForStudy.learningOrder.length}</span>}<span>7 pasos</span><span>{learningMode === 'explain-first' ? 'Explicación primero' : 'Descubrimiento primero'}</span>{lessonIsCompleted(currentMemory) && <span className="lesson-completed-fact"><Check size={12}/> Completada · {lessonCompletionScore(currentMemory)}%</span>}{currentMemory && <span className="memory-fact">Memoria {currentMemory.mastery}% · {formatReviewDate(currentMemory.nextReviewAt)}</span>}</div>
+          <div className="session-facts"><span>≈ {session.estimatedMinutes} min</span><span>{material.name}</span>{currentDocumentIndex >= 0 && <span>Tema {currentDocumentIndex + 1} de {semanticForStudy.learningOrder.length}</span>}<span>{phaseConfigs.length} pasos</span><span>Ruta enfocada</span>{lessonIsCompleted(currentMemory) && <span className="lesson-completed-fact"><Check size={12}/> Completada · {lessonCompletionScore(currentMemory)}%</span>}{currentMemory && <span className="memory-fact">Memoria {currentMemory.mastery}% · {formatReviewDate(currentMemory.nextReviewAt)}</span>}</div>
         </div>
         <div className="generated-actions">
           <label className="concept-select">
@@ -1723,26 +1678,6 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       {generationNote && <div className="engine-note"><Sparkles size={14} /><span>{generationNote}</span></div>}
 
       {hasPrerequisites && !prereqGateDismissed && <PrerequisiteGate material={material} concept={concept} onContinue={() => setPrereqGateDismissed(true)} onStudyPrerequisite={loadConcept} />}
-
-      <section className="learning-mode-panel">
-        <div className="learning-mode-copy">
-          <span className="tiny-label">CÓMO QUIERES APRENDERLO</span>
-          <strong>{learningMode === 'explain-first' ? 'Primero te lo explico; después te hago pensar.' : 'Primero intentas resolver el problema; después construimos la explicación.'}</strong>
-          <p>Puedes cambiar de enfoque en cualquier momento. Comprende recordará tu preferencia para los siguientes conceptos.</p>
-        </div>
-        <div className="learning-mode-options">
-          <button className={learningMode === 'explain-first' ? 'active' : ''} onClick={() => changeLearningMode('explain-first')}>
-            <BookOpen size={17} />
-            <span><b>Explícame primero</b><small>{labDefinition ? 'Concepto → caso real → problema → formal → laboratorio → práctica' : 'Concepto → caso real → problema → formal → práctica interactiva'}</small></span>
-            {learningMode === 'explain-first' && <Check size={15} />}
-          </button>
-          <button className={learningMode === 'challenge-first' ? 'active' : ''} onClick={() => changeLearningMode('challenge-first')}>
-            <BrainCircuit size={17} />
-            <span><b>Hazme pensar primero</b><small>{labDefinition ? 'Problema → explicación → caso real → formal → laboratorio → práctica' : 'Problema → explicación → caso real → práctica interactiva'}</small></span>
-            {learningMode === 'challenge-first' && <Check size={15} />}
-          </button>
-        </div>
-      </section>
 
       <div className="concept-stepper">
         {phaseConfigs.map((item, index) => (
@@ -1883,15 +1818,37 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
           </> : <div className="practice-finish-card"><Trophy size={30} /><span className="tiny-label">RESULTADO DE LA PRÁCTICA</span><h3>{soloCorrectCount >= 3 ? 'Ya estás transfiriendo la idea.' : soloCorrectCount >= 2 ? 'La base está; conviene otra vuelta corta.' : 'Necesitas un refuerzo antes de subir dificultad.'}</h3><p>Resolviste {soloAnsweredEntries.length} retos y acertaste {soloCorrectCount}. Comprende cambió la ruta según tus respuestas en vez de mostrarte siempre la misma pregunta.</p>{currentMemory && <div className="memory-evidence-note"><RefreshCw size={15} /><span>Guardado en memoria: <b>{currentMemory.mastery}%</b> de dominio · próximo repaso <b>{formatReviewDate(currentMemory.nextReviewAt).toLocaleLowerCase('es-MX')}</b>.</span></div>}<button className="secondary-button" onClick={resetSoloPractice}><RotateCcw size={14} /> Repetir práctica</button></div>}
         </>}
 
-        {currentPhase === 'explain' && <>
-          <div className="workbench-kicker"><Trophy size={17} /> {phase + 1} · EXPLÍCAMELO TÚ</div>
-          <h2>La prueba final es recuperar la idea sin mirar.</h2>
-          <p className="workbench-intro">{effectiveTeachBack.prompt}</p>
-          <div className="teachback-grid">
-            <div><textarea className="explanation-area" value={teachBack} onChange={e => { setTeachBack(e.target.value); setEvaluation(null) }} placeholder="Explícalo con tus palabras…" /><div className="teachback-checklist">{effectiveTeachBack.checklist.map(item => <span key={item}><Check size={12} />{item}</span>)}</div><button className="primary-button" disabled={!teachBack.trim() || evaluating} onClick={evaluate}>{evaluating ? 'Evaluando…' : 'Evaluar mi comprensión'} <ArrowRight size={15} /></button></div>
-            {evaluation ? <aside className={evaluation.score >= 75 ? 'evaluation-card good' : 'evaluation-card'}><div className="evaluation-head"><strong>{evaluation.score}%</strong><span>{evaluationSource === 'ai' ? 'Evaluación IA' : 'Evaluación local'}</span></div><h3>{evaluation.verdict}</h3><div className="evaluation-section"><b>Lo que sí está</b>{evaluation.strengths.map(x => <p key={x}>✓ {x}</p>)}</div><div className="evaluation-section"><b>Lo que falta</b>{evaluation.missing.map(x => <p key={x}>• {x}</p>)}</div><div className="evaluation-next"><strong>Siguiente acción</strong><p>{evaluation.nextAction}</p></div>{currentMemory && <div className="evaluation-memory"><RefreshCw size={14} /><span>Memoria actualizada: {currentMemory.mastery}% · repaso {formatReviewDate(currentMemory.nextReviewAt).toLocaleLowerCase('es-MX')}</span></div>}</aside> : <aside className="evaluation-placeholder"><BrainCircuit size={26} /><strong>Yo no voy a calificar redacción.</strong><p>La evaluación busca si entendiste la idea, qué omitiste y cuál debería ser tu siguiente acción.</p></aside>}
+
+        {currentPhase === 'exam' && <>
+          <div className="workbench-kicker"><Trophy size={17} /> {phase + 1} · EXAMEN FINAL</div>
+          <div className="final-exam-head">
+            <div><h2>Comprueba si el tema ya se sostiene sin ayuda.</h2><p className="workbench-intro">{finalExam.intro}</p></div>
+            <div className="final-exam-progress"><strong>{examSubmitted ? `${examScore}%` : `${examAnsweredCount}/${finalExam.questions.length}`}</strong><span>{examSubmitted ? 'resultado' : 'respondidas'}</span></div>
           </div>
-          {evaluation && <div className="lesson-completion-banner"><div className="lesson-completion-icon"><Check size={24} /></div><div><span className="tiny-label">LECCIÓN COMPLETADA</span><h3>Terminaste {concept}</h3><p>Tu resultado final fue <strong>{evaluation.score}%</strong>. La lección queda marcada como completada y Comprende conservará este estado en tu progreso y sincronización.</p></div><div className="lesson-completion-score"><strong>{evaluation.score}%</strong><span>resultado</span></div></div>}
+          <div className="final-exam-note"><BrainCircuit size={16}/><span>Necesitas <b>{finalExam.passScore}%</b> para completar la lección. Las respuestas y explicaciones se muestran solo al enviar el examen.</span></div>
+          <div className="final-exam-list">
+            {finalExam.questions.map((question, index) => {
+              const selected = examAnswers[question.id]
+              const answered = selected !== undefined
+              const kindLabel = question.kind === 'concepto' ? 'Concepto' : question.kind === 'aplicacion' ? 'Aplicación' : question.kind === 'formula' ? 'Fórmula' : question.kind === 'interpretacion' ? 'Interpretación' : question.kind === 'transferencia' ? 'Transferencia' : 'Error común'
+              return <article className={examSubmitted ? selected === question.correctIndex ? 'final-exam-question correct' : 'final-exam-question wrong' : 'final-exam-question'} key={question.id}>
+                <div className="final-exam-question-head"><span>{index + 1}</span><div><small>{kindLabel}</small><strong>{question.prompt}</strong></div></div>
+                {question.context && <p className="final-exam-context">{question.context}</p>}
+                {question.formula && <div className="final-exam-formula"><span>FÓRMULA</span><code>{question.formula}</code></div>}
+                <div className="final-exam-options">{question.choices.map((choice, choiceIndex) => {
+                  const isSelected = selected === choiceIndex
+                  const isCorrect = choiceIndex === question.correctIndex
+                  const className = examSubmitted ? isCorrect ? 'correct' : isSelected ? 'wrong' : '' : isSelected ? 'selected' : ''
+                  return <button key={`${question.id}-${choiceIndex}`} className={className} disabled={examSubmitted} onClick={() => setExamAnswers(previous => ({ ...previous, [question.id]: choiceIndex }))}><span>{String.fromCharCode(65 + choiceIndex)}</span><p>{choice}</p>{examSubmitted && isCorrect && <Check size={16}/>}</button>
+                })}</div>
+                {examSubmitted && <div className={selected === question.correctIndex ? 'final-exam-feedback good' : 'final-exam-feedback'}><strong>{selected === question.correctIndex ? 'Correcto' : 'Revisa esta idea'}</strong><p>{question.explanation}</p></div>}
+              </article>
+            })}
+          </div>
+          {!examSubmitted ? <div className="final-exam-submit"><button className="primary-button" disabled={examAnsweredCount !== finalExam.questions.length} onClick={submitFinalExam}>Enviar examen <ArrowRight size={15}/></button><span>{examAnsweredCount === finalExam.questions.length ? 'Listo para calificar.' : `Te faltan ${finalExam.questions.length - examAnsweredCount} preguntas.`}</span></div> : <>
+            <div className={examPassed ? 'final-exam-result passed' : 'final-exam-result'}><div><Trophy size={28}/><span className="tiny-label">{examPassed ? 'LECCIÓN COMPLETADA' : 'REFUERZO RECOMENDADO'}</span><h3>{examPassed ? `Terminaste ${concept}` : 'Todavía no cierres este tema.'}</h3><p>{examPassed ? <>Obtuviste <strong>{examScore}%</strong>. Comprende guardó el examen como evidencia final de esta lección.</> : <>Obtuviste <strong>{examScore}%</strong>. Necesitas {finalExam.passScore}%. Revisa las explicaciones de las preguntas falladas y vuelve a intentarlo.</>}</p></div><div className="lesson-completion-score"><strong>{examScore}%</strong><span>examen</span></div></div>
+            {!examPassed && <button className="secondary-button final-exam-retry" onClick={retryFinalExam}><RotateCcw size={14}/> Reintentar examen</button>}
+          </>}
         </>}
       </section>
 
@@ -1904,7 +1861,7 @@ function MaterialStudyView({ material, initialConcept, onBack, onMemoryEvent, le
       <div className="workbench-footer generated-footer">
         <button className="ghost-button" disabled={phase === 0} onClick={() => { setPhase(Math.max(0, phase - 1)); setRescue(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><ArrowLeft size={15} /> Anterior</button>
         <span>{phase + 1} / {phaseConfigs.length}</span>
-        {phase < phaseConfigs.length - 1 ? <button className="primary-button" onClick={() => { setPhase(phase + 1); setRescue(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Siguiente <ArrowRight size={15} /></button> : !evaluation ? <button className="primary-button completion-required-button" disabled><Check size={15} /> Evalúa tu comprensión para completar</button> : nextDocumentConcept ? <button className="primary-button document-next-button" onClick={() => loadConcept(nextDocumentConcept)}>Siguiente tema: {nextDocumentConcept} <ArrowRight size={15} /></button> : <button className="primary-button" onClick={() => { resetInteraction(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><RotateCcw size={15} /> Repetir sesión</button>}
+        {phase < phaseConfigs.length - 1 ? <button className="primary-button" onClick={() => { setPhase(phase + 1); setRescue(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Siguiente <ArrowRight size={15} /></button> : (examPassed || lessonIsCompleted(currentMemory)) ? nextDocumentConcept ? <button className="primary-button document-next-button" onClick={() => loadConcept(nextDocumentConcept)}>Siguiente tema: {nextDocumentConcept} <ArrowRight size={15} /></button> : <button className="primary-button" onClick={() => { resetInteraction(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><RotateCcw size={15} /> Repetir sesión</button> : <button className="primary-button completion-required-button" disabled><Check size={15} /> Aprueba el examen final para completar</button>}
       </div>
     </div>
   )

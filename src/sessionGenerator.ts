@@ -37,6 +37,23 @@ export type SoloExercise = {
   explanation: string
 }
 
+export type FinalExamQuestion = {
+  id: string
+  kind: 'concepto' | 'aplicacion' | 'formula' | 'interpretacion' | 'transferencia' | 'error_comun'
+  context: string
+  formula: string
+  prompt: string
+  choices: string[]
+  correctIndex: number
+  explanation: string
+}
+
+export type FinalExam = {
+  intro: string
+  passScore: number
+  questions: FinalExamQuestion[]
+}
+
 export type StudySession = {
   concept: string
   objective: string
@@ -73,6 +90,7 @@ export type StudySession = {
     startIndex: number
     exercises: SoloExercise[]
   }
+  finalExam?: FinalExam
   teachBack: {
     prompt: string
     checklist: string[]
@@ -525,6 +543,62 @@ function scenarioPack(concept: string) {
   }
 }
 
+function fallbackFinalExam(concept: string, check: InteractiveCheck, exercises: SoloExercise[]): FinalExam {
+  const kindByLevel: Record<SoloExercise['level'], FinalExamQuestion['kind']> = {
+    refuerzo: 'concepto',
+    aplicacion: 'aplicacion',
+    examen: 'interpretacion',
+    transferencia: 'transferencia',
+  }
+  const questions: FinalExamQuestion[] = [
+    {
+      id: 'final-check',
+      kind: 'concepto',
+      context: '',
+      formula: '',
+      prompt: check.question,
+      choices: check.choices,
+      correctIndex: check.correctIndex,
+      explanation: check.explanation,
+    },
+    ...exercises.map((exercise, index) => ({
+      id: `final-${index + 1}-${exercise.id}`,
+      kind: kindByLevel[exercise.level],
+      context: exercise.scenario,
+      formula: '',
+      prompt: exercise.question,
+      choices: exercise.choices,
+      correctIndex: exercise.correctIndex,
+      explanation: exercise.explanation,
+    })),
+    {
+      id: 'final-error-comun',
+      kind: 'error_comun',
+      context: `Estás repasando ${concept} antes de cerrar la lección.`,
+      formula: '',
+      prompt: '¿Qué sería la señal más clara de que todavía falta comprensión real?',
+      choices: [
+        'Reconocer el nombre, pero no poder explicar para qué sirve ni usarlo en un caso nuevo',
+        'Poder identificar cuándo aplica y justificar una decisión',
+        'Relacionar la idea con un ejemplo distinto al de la explicación',
+        'Interpretar por qué una respuesta sería correcta o incorrecta',
+      ],
+      correctIndex: 0,
+      explanation: 'Reconocer un término no garantiza comprensión. La meta de Comprende es que puedas interpretar, aplicar y transferir la idea, no solo identificar su nombre.',
+    },
+  ]
+  return {
+    intro: `Cierra ${concept} con una evaluación corta. No se califica memoria literal: se comprueba concepto, aplicación, interpretación, error común y transferencia.`,
+    passScore: 70,
+    questions: questions.slice(0, 6),
+  }
+}
+
+export function getFinalExam(session: StudySession): FinalExam {
+  if (session.finalExam?.questions?.length) return session.finalExam
+  return fallbackFinalExam(session.concept, session.visual.check, session.solo.exercises)
+}
+
 function relatedConcepts(material: StudyMaterial, concept: string, limit = 4) {
   const semantic = material.semantic?.concepts.find(c => c.label.toLocaleLowerCase('es-MX') === concept.toLocaleLowerCase('es-MX'))
   if (semantic) {
@@ -590,6 +664,7 @@ export function buildLocalStudySession(material: StudyMaterial, concept: string)
       startIndex: 1,
       exercises: real.solo,
     },
+    finalExam: fallbackFinalExam(concept, real.check, real.solo),
     teachBack: {
       prompt: `Explícame ${concept} como si yo fuera un compañero que faltó a clase. Incluye qué es, para qué sirve y un ejemplo del mundo real distinto al que acabas de practicar. Las conexiones con otros temas solo deben pedirse cuando esos temas ya fueron estudiados.`,
       checklist: [
@@ -649,6 +724,6 @@ export function evaluateRecallLocally(answer: string, material: StudyMaterial, c
     strengths: strengths.length ? strengths : ['Ya intentaste recuperar la idea sin copiar; ese esfuerzo sí cuenta como aprendizaje.'],
     missing: missing.length ? missing : ['Ahora añade un ejemplo propio para comprobar transferencia.'],
     misconception: score >= 70 ? 'No detecto una señal fuerte de confusión con esta evaluación local.' : 'La evaluación local no puede distinguir todavía si el problema es conceptual o de redacción; compara tu explicación con la evidencia fuente.',
-    nextAction: score >= 80 ? 'Haz una situación de transferencia o vuelve mañana para un repaso espaciado.' : 'Regresa a “Verlo en acción” y “Formal”, espera un minuto y vuelve a explicarlo sin mirar.',
+    nextAction: score >= 80 ? 'Haz una situación de transferencia o vuelve mañana para un repaso espaciado.' : 'Regresa a “Caso real”, “Guiado” y “Práctica”, espera un minuto y vuelve a intentarlo.',
   }
 }

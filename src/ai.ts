@@ -26,6 +26,13 @@ function relatedConcepts(material: StudyMaterial, concept: string) {
   return material.concepts.map(c => c.label).filter(c => c.toLocaleLowerCase('es-MX') !== concept.toLocaleLowerCase('es-MX')).slice(0, 7)
 }
 
+function previousConcepts(material: StudyMaterial, concept: string, limit = 6) {
+  const order = material.semantic?.learningOrder || []
+  const index = order.findIndex(label => label.toLocaleLowerCase('es-MX') === concept.toLocaleLowerCase('es-MX'))
+  if (index <= 0) return []
+  return order.slice(Math.max(0, index - limit), index)
+}
+
 export async function explainConceptWithAI(
   material: StudyMaterial,
   concept: string,
@@ -102,7 +109,7 @@ export async function enhanceSessionWithAI(material: StudyMaterial, concept: str
         concept,
         materialName: material.name,
         excerpts: (excerpts.length ? excerpts : [material.text.slice(0, 1800)]).slice(0, 6),
-        relatedConcepts: relatedConcepts(material, concept),
+        previousConcepts: previousConcepts(material, concept),
         forceRefresh,
       }),
     })

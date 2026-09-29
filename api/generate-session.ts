@@ -1,7 +1,7 @@
 import { createStructuredResponseWithMeta } from './_openai.js'
 import { hashObject, readAiCache, writeAiCache } from './_supabase.js'
 
-const PROMPT_VERSION = 'study-session-v1.4'
+const PROMPT_VERSION = 'study-session-v2.0.9-lean-exam'
 
 const termSchema = {
   type: 'object', additionalProperties: false, required: ['term', 'meaning'],
@@ -21,7 +21,7 @@ const choiceCheckSchema = {
 const sessionSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['concept','objective','estimatedMinutes','hook','intuition','visual','formal','guided','solo','teachBack','rescue'],
+  required: ['concept','objective','estimatedMinutes','hook','intuition','visual','formal','guided','solo','finalExam','teachBack','rescue'],
   properties: {
     concept: { type: 'string' },
     objective: { type: 'string' },
@@ -84,6 +84,26 @@ const sessionSchema = {
         } },
       },
     },
+    finalExam: {
+      type: 'object', additionalProperties: false, required: ['intro','passScore','questions'],
+      properties: {
+        intro: { type: 'string' },
+        passScore: { type: 'integer', minimum: 60, maximum: 80 },
+        questions: { type: 'array', minItems: 6, maxItems: 6, items: {
+          type: 'object', additionalProperties: false, required: ['id','kind','context','formula','prompt','choices','correctIndex','explanation'],
+          properties: {
+            id: { type: 'string' },
+            kind: { type: 'string', enum: ['concepto','aplicacion','formula','interpretacion','transferencia','error_comun'] },
+            context: { type: 'string' },
+            formula: { type: 'string' },
+            prompt: { type: 'string' },
+            choices: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string' } },
+            correctIndex: { type: 'integer', minimum: 0, maximum: 3 },
+            explanation: { type: 'string' },
+          },
+        } },
+      },
+    },
     teachBack: {
       type: 'object', additionalProperties: false, required: ['prompt','checklist'],
       properties: { prompt: { type: 'string' }, checklist: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } } },
@@ -98,27 +118,27 @@ const sessionSchema = {
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
-    const { concept, materialName, excerpts, relatedConcepts } = req.body || {}
+    const { concept, materialName, excerpts, previousConcepts } = req.body || {}
     if (!concept || !Array.isArray(excerpts) || !excerpts.length) return res.status(400).json({ error: 'Missing concept or excerpts' })
 
     const modelId = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
-    const sourceHash = hashObject({ concept, materialName, excerpts: excerpts.slice(0, 6), relatedConcepts })
+    const sourceHash = hashObject({ concept, materialName, excerpts: excerpts.slice(0, 6), previousConcepts })
     const cacheKey = `session:${PROMPT_VERSION}:${modelId}:${sourceHash}`
     if (!req.body?.forceRefresh) {
       const cached = await readAiCache<any>(cacheKey)
       if (cached?.session) return res.status(200).json({ ...cached, cached: true })
     }
 
-    const prompt = `Crea una sesión de aprendizaje interactiva de 18 a 25 minutos para el concepto "${concept}" a partir del material "${materialName || 'Documento'}".
+    const prompt = `Crea una sesión de aprendizaje interactiva de 15 a 22 minutos para el concepto "${concept}" a partir del material "${materialName || 'Documento'}".
 
 EVIDENCIA DEL MATERIAL:
 ${excerpts.map((x: string, i: number) => `[${i + 1}] ${x}`).join('\n\n')}
 
-CONCEPTOS RELACIONADOS DETECTADOS:
-${Array.isArray(relatedConcepts) ? relatedConcepts.join(', ') : ''}
+TEMAS ANTERIORES YA DISPONIBLES PARA CONEXIONES:
+${Array.isArray(previousConcepts) && previousConcepts.length ? previousConcepts.join(', ') : 'Ninguno: este concepto no debe depender de temas posteriores.'}
 
-OBJETIVO DEL BLOQUE 8
-El estudiante ya dijo que las secciones "Verlo", "Conmigo" y "Tú solo" se sentían abstractas. Debes convertirlas en EXPERIENCIAS ACTIVAS con casos del mundo real.
+OBJETIVO DE LA SESIÓN
+La ruta visible será: ENTENDER → CASO REAL → LABORATORIO (si aplica) → GUIADO → PRÁCTICA → EXAMEN FINAL. "Problema" y "Formal" ya no aparecen como pasos separados; sus ideas útiles deben integrarse de manera natural en las secciones activas y en el examen final.
 
 Reglas generales:
 - Español mexicano claro, universitario, concreto y breve.
@@ -155,13 +175,27 @@ OTRAS REGLAS:
 - intuition.example: ejemplo concreto corto.
 - intuition.context: conecta con el sentido de los fragmentos.
 - formal.sourceEvidence debe reutilizar literalmente 1-3 fragmentos proporcionados.
-- teachBack debe exigir qué es, para qué sirve, una relación y un ejemplo NUEVO.
+EXAMEN FINAL:
+- finalExam debe tener exactamente 6 preguntas de opción múltiple con 4 opciones plausibles cada una.
+- passScore debe ser 70.
+- No repitas literalmente las preguntas de guided o solo: evalúa la misma idea con situaciones nuevas.
+- Cubre, en conjunto: significado del concepto, cuándo usarlo, aplicación, interpretación, un error común y transferencia.
+- Si la evidencia contiene una fórmula o cálculo central, incluye 1 o 2 preguntas kind="formula". En formula escribe la expresión necesaria y pregunta por significado de variables, sustitución simple o interpretación del resultado.
+- Si la evidencia NO contiene una fórmula central, NO inventes una: sustituye esas preguntas por interpretación o error_comun y deja formula="".
+- Las preguntas solo pueden usar el concepto actual, la evidencia proporcionada y, opcionalmente, los TEMAS ANTERIORES listados arriba. Nunca exijas un concepto posterior del documento.
+- explanation debe explicar por qué la opción correcta lo es y por qué el error típico falla, sin revelar la respuesta antes de enviar el examen.
+- context debe ser breve; puede ser "" si la pregunta no necesita escenario.
+- ids únicos y estables, por ejemplo final-1 ... final-6.
+
+COMPATIBILIDAD INTERNA:
+- formal y hook siguen presentes en el objeto porque apoyan rescates, trazabilidad y compatibilidad con sesiones guardadas, pero NO diseñes esos campos como pasos de estudio independientes. Sé breve.
+- teachBack se conserva solo por compatibilidad histórica; mantenlo breve porque la interfaz nueva usa finalExam.
 - rescates cambian de estrategia según términos, fórmula, cuándo usarlo y prerrequisitos.`
 
     const routed = await createStructuredResponseWithMeta<any>(prompt, 'study_session_v8', sessionSchema, {
       maxOutputTokens: 5600,
       model: modelId,
-      systemPrompt: 'Eres un tutor universitario de IA experto en aprendizaje activo. No examinas al estudiante por sorpresa: primero construyes comprensión, luego muestras casos reales, resuelves decisiones junto con él y finalmente aumentas la dificultad. Las definiciones formales se mantienen fieles a la evidencia; los ejemplos externos se presentan como escenarios pedagógicos, no como contenido del documento.',
+      systemPrompt: 'Eres un tutor universitario de IA experto en aprendizaje activo. Diseñas una ruta corta: comprender, ver un caso real, practicar con apoyo, practicar solo y cerrar con un examen de opción múltiple. Las fórmulas solo se evalúan cuando la evidencia realmente las contiene. Nunca adelantas conceptos posteriores del documento. Las definiciones formales se mantienen fieles a la evidencia; los ejemplos externos se presentan como escenarios pedagógicos, no como contenido del documento.',
     })
     const session = routed.data
     const attribution = {
